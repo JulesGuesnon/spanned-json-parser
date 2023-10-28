@@ -40,13 +40,13 @@ fn null(input: Span) -> IResult<Span, ()> {
     value((), tag("null")).parse(input)
 }
 
-fn parse_str(i: Span) -> IResult<Span, String> {
+fn parse_str(i: Span<'_>) -> IResult<Span, &str> {
     let (i, res) = escaped(opt(none_of("\\\\\"")), '\\', one_of(r#""n\"#))(i)?;
 
-    Ok((i, res.to_string()))
+    Ok((i, res.fragment()))
 }
 
-fn string(i: Span) -> IResult<Span, String> {
+fn string(i: Span<'_>) -> IResult<Span, &str> {
     context(
         "string",
         preceded(char('\"'), cut(terminated(parse_str, char('\"')))),
@@ -108,7 +108,7 @@ fn array(i: Span) -> IResult<Span, Vec<SpannedValue>> {
     )(i)
 }
 
-fn key_value(i: Span) -> IResult<Span, (String, SpannedValue)> {
+fn key_value(i: Span<'_>) -> IResult<Span, (&str, SpannedValue)> {
     separated_pair(
         preceded(sp, string),
         cut(preceded(sp, char(':'))),
@@ -117,7 +117,7 @@ fn key_value(i: Span) -> IResult<Span, (String, SpannedValue)> {
     .parse(i)
 }
 
-fn hash(i: Span) -> IResult<Span, HashMap<String, SpannedValue>> {
+fn hash(i: Span<'_>) -> IResult<Span, HashMap<&str, SpannedValue>> {
     context(
         "map",
         preceded(

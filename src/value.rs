@@ -8,13 +8,13 @@ pub enum Number {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Value {
+pub enum Value<'a> {
     Null,
     Number(Number),
-    String(String),
+    String(&'a str),
     Bool(bool),
-    Array(Vec<SpannedValue>),
-    Object(HashMap<String, SpannedValue>),
+    Array(Vec<SpannedValue<'a>>),
+    Object(HashMap<&'a str, SpannedValue<'a>>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -24,8 +24,8 @@ pub struct Position {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct SpannedValue {
-    pub value: Value,
+pub struct SpannedValue<'a> {
+    pub value: Value<'a>,
     pub start: Position,
     pub end: Position,
 }
