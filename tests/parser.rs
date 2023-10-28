@@ -1,3 +1,5 @@
+use std::fs;
+
 use spanned_json_parser::parse;
 
 #[test]
@@ -25,4 +27,13 @@ fn parse_basics() {
     assert_eq!(spanned_value.start.col, 5);
     assert_eq!(spanned_value.end.line, 15);
     assert_eq!(spanned_value.end.col, 5);
+}
+
+#[test]
+fn parse_twitter() {
+    let data = fs::read_to_string("./tests/data/twitter.json").unwrap();
+
+    let spanned_value = parse(&data).unwrap();
+
+    assert_eq!(spanned_value.start.line, 1);
 }
