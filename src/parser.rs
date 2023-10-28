@@ -60,11 +60,11 @@ type Exp<'a> = Option<(char, Span<'a>)>;
 fn number(i: Span) -> IResult<Span, Number> {
     let (i, matched) = context(
         "number",
-        cut(tuple((
+        tuple((
             opt(one_of("-+")),
             tuple((digit1, opt(complete(pair(char('.'), digit1))))),
             opt(complete(pair(one_of("eE"), digit1))),
-        ))),
+        )),
     )(i)?;
 
     let (sign, (body, decimal), exp): (Sign, ParsedNumber, Exp) = matched;
