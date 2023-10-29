@@ -496,6 +496,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "spanned_json_parser_cli"
+version = "0.1.0"
+dependencies = [
+ "spanned_json_parser",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"

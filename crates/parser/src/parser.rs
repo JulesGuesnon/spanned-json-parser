@@ -138,10 +138,7 @@ fn json_value(i: Span) -> IResult<Span, SpannedValue> {
 
     let (i, pos) = position(i)?;
 
-    let start = Position {
-        col: pos.naive_get_utf8_column(),
-        line: pos.location_line() as usize,
-    };
+    let start = Position::from(pos);
 
     let (i, value) = alt((
         map(hash, Value::Object),
@@ -154,37 +151,17 @@ fn json_value(i: Span) -> IResult<Span, SpannedValue> {
 
     let (i, pos) = position(i)?;
 
-    let end = Position {
-        col: pos.naive_get_utf8_column() - 1,
-        line: pos.location_line() as usize,
-    };
+    let end = Position::from(pos);
 
     Ok((i, SpannedValue { start, end, value }))
 }
 
 fn root(i: Span) -> IResult<Span, SpannedValue> {
     let (i, _) = take_while(is_sp)(i)?;
-    let (i, pos) = position(i)?;
 
-    let start = Position {
-        col: pos.naive_get_utf8_column(),
-        line: pos.location_line() as usize,
-    };
+    let (i, value) = json_value(i)?;
 
-    let (i, value) = alt((
-        map(hash, Value::Object),
-        map(array, Value::Array),
-        map(null, |_| Value::Null),
-    ))(i)?;
-
-    let (i, pos) = position(i)?;
-
-    let end = Position {
-        col: pos.naive_get_utf8_column() - 1,
-        line: pos.location_line() as usize,
-    };
-
-    Ok((i, SpannedValue { start, end, value }))
+    Ok((i, value))
 }
 
 pub fn parse(s: &str) -> Result<SpannedValue, String> {

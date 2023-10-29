@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use nom_locate::LocatedSpan;
+
 #[derive(Debug, PartialEq)]
 pub enum Number {
     PosInt(u64),
@@ -28,4 +30,13 @@ pub struct SpannedValue<'a> {
     pub value: Value<'a>,
     pub start: Position,
     pub end: Position,
+}
+
+impl<T: nom::AsBytes> From<LocatedSpan<T>> for Position {
+    fn from(val: LocatedSpan<T>) -> Self {
+        Position {
+            col: val.location_line() as usize,
+            line: val.naive_get_utf8_column(),
+        }
+    }
 }
