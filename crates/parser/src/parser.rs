@@ -3,11 +3,11 @@ use std::{collections::HashMap, error::Error};
 use nom::{
     branch::alt,
     bytes::complete::{escaped, tag, take_while},
-    character::complete::{char, digit1, none_of, one_of},
+    character::complete::{char, digit1, multispace0, none_of, one_of},
     combinator::{complete, cut, map, opt, value},
     error::context,
     multi::separated_list0,
-    sequence::{pair, preceded, separated_pair, terminated, tuple},
+    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult, Parser,
 };
 use nom_locate::{position, LocatedSpan};
@@ -20,12 +20,6 @@ fn is_sp(c: char) -> bool {
     let chars = " \t\r\n";
 
     chars.contains(c)
-}
-
-fn sp(i: Span) -> IResult<Span, Span> {
-    let chars = " \t\r\n";
-
-    take_while(move |c| chars.contains(c))(i)
 }
 
 fn boolean(input: Span) -> IResult<Span, bool> {
@@ -41,21 +35,21 @@ fn null(input: Span) -> IResult<Span, ()> {
 }
 
 fn parse_str(i: Span<'_>) -> IResult<Span, &str> {
-    let (i, res) = escaped(opt(none_of("\\\\\"")), '\\', one_of(r#""n\"#))(i)?;
+    println!("Str {}", i);
+    let (i, res) = escaped(opt(none_of("\\\"")), '\\', char('"'))(i)?;
 
+    println!("HERE? {}", res);
     Ok((i, res.fragment()))
 }
 
 fn string(i: Span<'_>) -> IResult<Span, &str> {
-    context(
-        "string",
-        preceded(char('\"'), cut(terminated(parse_str, char('\"')))),
-    )(i)
+    println!("String {}", i);
+    context("string", delimited(char('"'), parse_str, cut(char('"'))))(i)
 }
 
 type Sign = Option<char>;
 type ParsedNumber<'a> = (Span<'a>, Option<(char, Span<'a>)>);
-type Exp<'a> = Option<(char, Span<'a>)>;
+type Exp<'a> = Option<(char, Option<char>, Span<'a>)>;
 
 fn number(i: Span) -> IResult<Span, Number> {
     let (i, matched) = context(
@@ -63,7 +57,7 @@ fn number(i: Span) -> IResult<Span, Number> {
         tuple((
             opt(one_of("-+")),
             tuple((digit1, opt(complete(pair(char('.'), digit1))))),
-            opt(complete(pair(one_of("eE"), digit1))),
+            opt(complete(tuple((one_of("eE"), opt(one_of("-+")), digit1)))),
         )),
     )(i)?;
 
@@ -80,7 +74,11 @@ fn number(i: Span) -> IResult<Span, Number> {
             None => String::new(),
         },
         match exp {
-            Some((_, number)) => format!("e{}", number.fragment()),
+            Some((_, sign, number)) => {
+                let sign = sign.map(|c| if c == '+' { "" } else { "-" }).unwrap_or("");
+
+                format!("e{}{}", sign, number.fragment())
+            }
             None => String::new(),
         }
     );
@@ -101,8 +99,8 @@ fn array(i: Span) -> IResult<Span, Vec<SpannedValue>> {
         preceded(
             char('['),
             cut(terminated(
-                separated_list0(preceded(sp, char(',')), json_value),
-                preceded(sp, char(']')),
+                separated_list0(preceded(multispace0, char(',')), json_value),
+                preceded(multispace0, char(']')),
             )),
         ),
     )(i)
@@ -110,8 +108,8 @@ fn array(i: Span) -> IResult<Span, Vec<SpannedValue>> {
 
 fn key_value(i: Span<'_>) -> IResult<Span, (&str, SpannedValue)> {
     separated_pair(
-        preceded(sp, string),
-        cut(preceded(sp, char(':'))),
+        preceded(multispace0, string),
+        cut(preceded(multispace0, char(':'))),
         json_value,
     )
     .parse(i)
@@ -124,10 +122,10 @@ fn hash(i: Span<'_>) -> IResult<Span, HashMap<&str, SpannedValue>> {
             char('{'),
             cut(terminated(
                 map(
-                    separated_list0(preceded(sp, char(',')), key_value),
+                    separated_list0(preceded(multispace0, char(',')), key_value),
                     |tuple_vec| tuple_vec.into_iter().collect(),
                 ),
-                preceded(sp, char('}')),
+                preceded(multispace0, char('}')),
             )),
         ),
     )(i)
