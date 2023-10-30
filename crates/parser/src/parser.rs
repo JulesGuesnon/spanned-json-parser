@@ -1,26 +1,20 @@
-use std::{collections::HashMap, error::Error};
+use std::{collections::HashMap, error::Error, result};
 
 use nom::{
     branch::alt,
-    bytes::complete::{escaped, tag, take_while},
-    character::complete::{char, digit1, multispace0, none_of, one_of},
-    combinator::{complete, cut, map, opt, value},
+    bytes::complete::{escaped, tag, take, take_while},
+    character::complete::{anychar, char, digit1, multispace0, multispace1, none_of, one_of},
+    combinator::{complete, cut, map, map_opt, map_res, opt, value, verify},
     error::context,
-    multi::separated_list0,
+    multi::{fold_many0, many0, separated_list0},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
-    IResult, Parser,
+    Err, IResult, Parser,
 };
 use nom_locate::{position, LocatedSpan};
 
 use crate::value::{Number, Position, SpannedValue, Value};
 
 pub type Span<'a> = LocatedSpan<&'a str>;
-
-fn is_sp(c: char) -> bool {
-    let chars = " \t\r\n";
-
-    chars.contains(c)
-}
 
 fn boolean(input: Span) -> IResult<Span, bool> {
     let parse_true = value(true, tag("true"));
@@ -34,17 +28,72 @@ fn null(input: Span) -> IResult<Span, ()> {
     value((), tag("null")).parse(input)
 }
 
-fn parse_str(i: Span<'_>) -> IResult<Span, &str> {
-    println!("Str {}", i);
-    let (i, res) = escaped(opt(none_of("\\\"")), '\\', char('"'))(i)?;
-
-    println!("HERE? {}", res);
-    Ok((i, res.fragment()))
+fn u16_hex(i: Span) -> IResult<Span, u16> {
+    map_res(take(4usize), |s: Span| {
+        u16::from_str_radix(s.fragment(), 16)
+    })(i)
 }
 
-fn string(i: Span<'_>) -> IResult<Span, &str> {
-    println!("String {}", i);
-    context("string", delimited(char('"'), parse_str, cut(char('"'))))(i)
+fn unicode_escape(i: Span) -> IResult<Span, char> {
+    map_opt(
+        alt((
+            // Not a surrogate
+            map(verify(u16_hex, |cp| !(0xD800..0xE000).contains(cp)), |cp| {
+                cp as u32
+            }),
+            // See https://en.wikipedia.org/wiki/UTF-16#Code_points_from_U+010000_to_U+10FFFF for details
+            map(
+                verify(
+                    separated_pair(u16_hex, tag("\\u"), u16_hex),
+                    |(high, low)| (0xD800..0xDC00).contains(high) && (0xDC00..0xE000).contains(low),
+                ),
+                |(high, low)| {
+                    let high_ten = (high as u32) - 0xD800;
+                    let low_ten = (low as u32) - 0xDC00;
+                    (high_ten << 10) + low_ten + 0x10000
+                },
+            ),
+        )),
+        // Could probably be replaced with .unwrap() or _unchecked due to the verify checks
+        std::char::from_u32,
+    )(i)
+}
+
+fn parse_char(i: Span) -> IResult<Span, char> {
+    let (i, c) = none_of("\"")(i)?;
+
+    if c == '\\' {
+        alt((
+            map_res(anychar, |c| {
+                Ok(match c {
+                    '"' | '\\' | '/' => c,
+                    'b' => '\x08',
+                    'f' => '\x0C',
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    _ => return Err(()),
+                })
+            }),
+            preceded(char('u'), unicode_escape),
+        ))(i)
+    } else {
+        Ok((i, c))
+    }
+}
+
+fn string(i: Span<'_>) -> IResult<Span, String> {
+    context(
+        "string",
+        delimited(
+            char('"'),
+            fold_many0(parse_char, String::new, |mut string, c| {
+                string.push(c);
+                string
+            }),
+            cut(char('"')),
+        ),
+    )(i)
 }
 
 type Sign = Option<char>;
@@ -55,15 +104,22 @@ fn number(i: Span) -> IResult<Span, Number> {
     let (i, matched) = context(
         "number",
         tuple((
-            opt(one_of("-+")),
-            tuple((digit1, opt(complete(pair(char('.'), digit1))))),
+            opt(char('-')),
+            tuple((
+                verify(digit1, |i: &Span| {
+                    let frag = i.fragment();
+
+                    !(frag.len() > 1 && frag.starts_with('0'))
+                }),
+                opt(complete(pair(char('.'), digit1))),
+            )),
             opt(complete(tuple((one_of("eE"), opt(one_of("-+")), digit1)))),
         )),
     )(i)?;
 
     let (sign, (body, decimal), exp): (Sign, ParsedNumber, Exp) = matched;
 
-    let sign = sign.unwrap_or('+');
+    let sign = sign.map(|_| "-").unwrap_or("");
 
     let formatted = format!(
         "{}{}{}{}",
@@ -83,14 +139,24 @@ fn number(i: Span) -> IResult<Span, Number> {
         }
     );
 
-    let result = match (sign, decimal.is_some()) {
-        ('+', false) => Number::PosInt(formatted.parse().unwrap()),
-        ('-', false) => Number::NegInt(formatted.parse().unwrap()),
-        (_, true) => Number::Float(formatted.parse().unwrap()),
+    let result = match (sign, decimal.is_some(), exp.is_some()) {
+        ("", false, false) => formatted
+            .parse()
+            .map(Number::PosInt)
+            .map_err(|_| nom::error::Error::new(i, nom::error::ErrorKind::TooLarge)),
+        ("-", false, false) => formatted
+            .parse()
+            .map(Number::NegInt)
+            .map_err(|_| nom::error::Error::new(i, nom::error::ErrorKind::TooLarge)),
+        _ => formatted
+            .parse()
+            .map(Number::Float)
+            .map_err(|_| nom::error::Error::new(i, nom::error::ErrorKind::TooLarge)),
         _ => panic!("Not supposed to happen"),
-    };
+    }
+    .map_err(nom::Err::Failure);
 
-    Ok((i, result))
+    Ok((i, result?))
 }
 
 fn array(i: Span) -> IResult<Span, Vec<SpannedValue>> {
@@ -106,7 +172,7 @@ fn array(i: Span) -> IResult<Span, Vec<SpannedValue>> {
     )(i)
 }
 
-fn key_value(i: Span<'_>) -> IResult<Span, (&str, SpannedValue)> {
+fn key_value(i: Span<'_>) -> IResult<Span, (String, SpannedValue)> {
     separated_pair(
         preceded(multispace0, string),
         cut(preceded(multispace0, char(':'))),
@@ -115,24 +181,23 @@ fn key_value(i: Span<'_>) -> IResult<Span, (&str, SpannedValue)> {
     .parse(i)
 }
 
-fn hash(i: Span<'_>) -> IResult<Span, HashMap<&str, SpannedValue>> {
-    context(
-        "map",
-        preceded(
-            char('{'),
-            cut(terminated(
-                map(
-                    separated_list0(preceded(multispace0, char(',')), key_value),
-                    |tuple_vec| tuple_vec.into_iter().collect(),
-                ),
-                preceded(multispace0, char('}')),
-            )),
-        ),
-    )(i)
+fn hash(i: Span<'_>) -> IResult<Span, HashMap<String, SpannedValue>> {
+    let (i, result) = preceded(
+        char('{'),
+        cut(terminated(
+            map(
+                separated_list0(preceded(multispace0, char(',')), key_value),
+                |tuple_vec| tuple_vec.into_iter().collect(),
+            ),
+            preceded(multispace0, char('}')),
+        )),
+    )(i)?;
+
+    Ok((i, result))
 }
 
 fn json_value(i: Span) -> IResult<Span, SpannedValue> {
-    let (i, _) = take_while(is_sp)(i)?;
+    let (i, _) = many0(multispace1)(i)?;
 
     let (i, pos) = position(i)?;
 
@@ -154,18 +219,17 @@ fn json_value(i: Span) -> IResult<Span, SpannedValue> {
     Ok((i, SpannedValue { start, end, value }))
 }
 
-fn root(i: Span) -> IResult<Span, SpannedValue> {
-    let (i, _) = take_while(is_sp)(i)?;
-
-    let (i, value) = json_value(i)?;
-
-    Ok((i, value))
-}
-
 pub fn parse(s: &str) -> Result<SpannedValue, String> {
     let span = Span::new(s);
 
-    let (_, value) = root(span).map_err(|e| e.to_string())?;
+    let (i, value) = json_value(span).map_err(|e| e.to_string())?;
 
-    Ok(value)
+    let (rest, _) =
+        many0(multispace1)(i).map_err(|e: nom::Err<nom::error::Error<Span>>| e.to_string())?;
+
+    if rest.fragment() != &"" {
+        Err(String::from(*rest.fragment()))
+    } else {
+        Ok(value)
+    }
 }

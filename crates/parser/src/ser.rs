@@ -5,7 +5,7 @@ use serde::{
 
 use crate::value::{Number, SpannedValue, Value};
 
-impl<'a> Serialize for SpannedValue<'a> {
+impl Serialize for SpannedValue {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -14,7 +14,7 @@ impl<'a> Serialize for SpannedValue<'a> {
     }
 }
 
-impl<'a> Serialize for Value<'a> {
+impl Serialize for Value {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

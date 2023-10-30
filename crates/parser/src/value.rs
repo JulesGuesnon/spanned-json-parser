@@ -20,16 +20,16 @@ impl Display for Number {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Value<'a> {
+pub enum Value {
     Null,
     Number(Number),
-    String(&'a str),
+    String(String),
     Bool(bool),
-    Array(Vec<SpannedValue<'a>>),
-    Object(HashMap<&'a str, SpannedValue<'a>>),
+    Array(Vec<SpannedValue>),
+    Object(HashMap<String, SpannedValue>),
 }
 
-impl<'a> Display for Value<'a> {
+impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Null => write!(f, "()"),
@@ -42,7 +42,7 @@ impl<'a> Display for Value<'a> {
     }
 }
 
-impl<'a> Value<'a> {
+impl Value {
     pub fn unwrap_null(&self) {
         match self {
             Self::Null => (),
@@ -50,7 +50,7 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn unwrap_string(&self) -> &'a str {
+    pub fn unwrap_string(&self) -> &str {
         match self {
             Self::String(str) => str,
             _ => panic!("Try to get string, but value is not a string: {}", self),
@@ -71,14 +71,14 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn unwrap_array(&self) -> &Vec<SpannedValue<'a>> {
+    pub fn unwrap_array(&self) -> &Vec<SpannedValue> {
         match self {
             Self::Array(array) => array,
             _ => panic!("Try to get array, but value is not a array: {}", self),
         }
     }
 
-    pub fn unwrap_object(&self) -> &HashMap<&'a str, SpannedValue<'a>> {
+    pub fn unwrap_object(&self) -> &HashMap<String, SpannedValue> {
         match self {
             Self::Object(obj) => obj,
             _ => panic!("Try to get object, but value is not a object: {}", self),
@@ -93,13 +93,13 @@ pub struct Position {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct SpannedValue<'a> {
-    pub value: Value<'a>,
+pub struct SpannedValue {
+    pub value: Value,
     pub start: Position,
     pub end: Position,
 }
 
-impl<'a> Display for SpannedValue<'a> {
+impl Display for SpannedValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
