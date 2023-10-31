@@ -108,8 +108,8 @@ impl Display for SpannedValue {
 impl<T: nom::AsBytes> From<LocatedSpan<T>> for Position {
     fn from(val: LocatedSpan<T>) -> Self {
         Position {
-            col: val.location_line() as usize,
-            line: val.naive_get_utf8_column(),
+            line: val.location_line() as usize,
+            col: val.naive_get_utf8_column() - 1,
         }
     }
 }

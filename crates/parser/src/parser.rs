@@ -202,7 +202,6 @@ fn json_value(i: Span) -> IResult<Span, SpannedValue> {
     let (i, pos) = position(i)?;
 
     let start = Position::from(pos);
-
     let (i, value) = alt((
         map(hash, Value::Object),
         map(array, Value::Array),
