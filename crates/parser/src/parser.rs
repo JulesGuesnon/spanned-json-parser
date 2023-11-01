@@ -22,6 +22,10 @@ pub type Span<'a> = LocatedSpan<&'a str>;
 type Result<'a, R> = IResult<Span<'a>, R, Error>;
 type ParseResult = std::result::Result<SpannedValue, Error>;
 
+fn take_until_delimiter(i: Span) -> Result<String> {
+    many_till(anychar, one_of(" ,]}:"))(i).map(|(i, (chars, a))| (i, chars.into_iter().collect()))
+}
+
 fn boolean(input: Span) -> Result<bool> {
     let parse_true = value(true, tag("true"));
 
@@ -122,6 +126,7 @@ fn string(i: Span<'_>) -> Result<String> {
         }
         Err::Failure(mut e) => {
             e.start = start;
+            e.end.col -= 1;
             e.value = Kind::MissingQuote;
             Err::Failure(e)
         }
@@ -133,6 +138,8 @@ type ParsedNumber<'a> = (Span<'a>, Option<(char, Span<'a>)>);
 type Exp<'a> = Option<(char, Option<char>, Span<'a>)>;
 
 fn number(i: Span) -> Result<Number> {
+    let start = Position::from(i);
+
     let (i, matched) = tuple((
         opt(char('-')),
         tuple((
@@ -144,7 +151,16 @@ fn number(i: Span) -> Result<Number> {
             opt(complete(pair(char('.'), digit1))),
         )),
         opt(complete(tuple((one_of("eE"), opt(one_of("-+")), digit1)))),
-    ))(i)?;
+    ))(i)
+    .or_else(|_: nom::Err<Error>| {
+        let (i, number) = take_until_delimiter(i)?;
+
+        Err(Err::Error(Error::new(
+            start,
+            Position::from_end(i),
+            Kind::InvalidNumber(number),
+        )))
+    })?;
 
     let (sign, (body, decimal), exp): (Sign, ParsedNumber, Exp) = matched;
 
@@ -198,6 +214,8 @@ fn array(i: Span) -> Result<Vec<SpannedValue>> {
             // If not nom error then it's another failure of a json value
             if let Kind::NomError(_) = e.value {
                 e.value = Kind::MissingArrayBracket;
+                e.start = start;
+                e.end.col -= 1;
             };
 
             Err::Failure(e)
@@ -208,10 +226,12 @@ fn array(i: Span) -> Result<Vec<SpannedValue>> {
 fn key_value(i: Span<'_>) -> Result<(String, SpannedValue)> {
     let (i, key) = preceded(multispace0, string)(i).or_else(|e| match e {
         Err::Error(mut e) => {
-            let (i, (key, _)) = many_till(anychar, one_of(" :"))(i)?;
-            e.value = Kind::InvalidKey(key.into_iter().collect());
+            let (i, key) = take_until_delimiter(i)?;
+
+            e.value = Kind::InvalidKey(key);
             let end = Position {
                 line: i.location_line() as usize,
+                // We go back to the end of the key
                 col: i.naive_get_utf8_column() - 2,
             };
             e.end = end;
@@ -224,6 +244,9 @@ fn key_value(i: Span<'_>) -> Result<(String, SpannedValue)> {
     let (i, _) = cut(preceded(multispace0, char(':')))(i).map_err(|e: Err<Error>| match e {
         Err::Failure(mut e) => {
             e.value = Kind::MissingColon;
+            let pos = Position::from(i);
+            e.start = pos.clone();
+            e.end = pos;
             Err::Failure(e)
         }
         e => e,
@@ -235,7 +258,9 @@ fn key_value(i: Span<'_>) -> Result<(String, SpannedValue)> {
 }
 
 fn hash(i: Span<'_>) -> Result<HashMap<String, SpannedValue>> {
-    let (i, result) = preceded(
+    let start = Position::from(i);
+
+    preceded(
         char('{'),
         cut(terminated(
             map(
@@ -244,17 +269,31 @@ fn hash(i: Span<'_>) -> Result<HashMap<String, SpannedValue>> {
             ),
             preceded(multispace0, char('}')),
         )),
-    )(i)?;
+    )(i)
+    .map_err(|e| match e {
+        Err::Incomplete(_) => panic!("Array: Incomplete error happened"),
+        Err::Error(mut e) => {
+            e.value = Kind::InvalidString;
+            Err::Error(e)
+        }
+        Err::Failure(mut e) => {
+            // If not nom error then it's another failure of a json value
+            if let Kind::NomError(_) = e.value {
+                e.value = Kind::MissingObjectBracket;
+                e.start = start;
+                e.end.col -= 1;
+            };
 
-    Ok((i, result))
+            Err::Failure(e)
+        }
+    })
 }
 
 fn json_value(i: Span) -> Result<SpannedValue> {
     let (i, _) = many0(multispace1)(i)?;
 
-    let (i, pos) = position(i)?;
+    let start = Position::from(i);
 
-    let start = Position::from(pos);
     let (i, value) = alt((
         map(hash, Value::Object),
         map(array, Value::Array),
@@ -262,11 +301,14 @@ fn json_value(i: Span) -> Result<SpannedValue> {
         map(number, Value::Number),
         map(boolean, Value::Bool),
         map(null, |_| Value::Null),
-    ))(i)?;
+    ))(i)
+    .map_err(|e| {
+        println!("{:?}", e);
 
-    let (i, pos) = position(i)?;
+        e
+    })?;
 
-    let end = Position::from_end(pos);
+    let end = Position::from_end(i);
 
     Ok((i, SpannedValue { start, end, value }))
 }
@@ -278,12 +320,9 @@ pub fn end_chars(i: Span) -> std::result::Result<(Span, ()), Error> {
         return Ok((rest, ()));
     }
 
-    let (rest, start) = unwrap_nom_error(position(rest))?;
-
-    let start = Position::from(start);
+    let start = Position::from(rest);
 
     let (end, _) = unwrap_nom_error(many_till(anychar, eof)(rest))?;
-    let (_, end) = unwrap_nom_error(position(end))?;
 
     Err(Error::new(
         start,
