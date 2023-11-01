@@ -1,7 +1,7 @@
 use spanned_json_parser::parse;
 
 #[test]
-fn parse_basics() {
+fn parse_basic() {
     let data = r#"
     {
         "hello": "wolrd",
@@ -27,6 +27,108 @@ fn parse_basics() {
     assert_eq!(spanned_value.end.col, 5);
 }
 
+mod error {
+    use spanned_json_parser::{error::Kind, parse};
+
+    // #[test]
+    // fn invalid_json_value() {
+    //     let json = r#"'sussy string'"#;
+    //
+    //     let parsed = parse(json);
+    //
+    //     assert!(parsed.is_err());
+    //
+    //     match parsed {
+    //         Err(e) => {
+    //             assert_eq!(e.start.line, 1);
+    //             assert_eq!(e.start.col, 1);
+    //             assert_eq!(e.end.line, 1);
+    //             assert_eq!(e.end.col, 17);
+    //             assert_eq!(e.value, Kind::MissingQuote);
+    //         }
+    //         Ok(_) => panic!("Not supposed to happen"),
+    //     }
+    // }
+
+    #[test]
+    fn invalid_key() {
+        let json = r#"{12: "world"}"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 2);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 3);
+                assert_eq!(e.value, Kind::InvalidKey("12".into()));
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+    }
+
+    #[test]
+    fn missing_colon() {
+        let json = r#"{"hello" "world"}"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 9);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 9);
+                assert_eq!(e.value, Kind::MissingColon);
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+    }
+
+    #[test]
+    fn nested_failure() {
+        let json = r#"["string"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 2);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 9);
+                assert_eq!(e.value, Kind::MissingQuote);
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+    }
+    // #[test]
+    // fn missing_quote() {
+    //     let json = r#"{"hello": "world}"#;
+    //
+    //     let parsed = parse(json);
+    //
+    //     assert!(parsed.is_err());
+    //
+    //     match parsed {
+    //         Err(e) => {
+    //             assert_eq!(e.start.line, 1);
+    //             assert_eq!(e.start.col, 17);
+    //             assert_eq!(e.end.line, 1);
+    //             assert_eq!(e.end.col, 17);
+    //             assert!(e.value.same(&Kind::MissingQuote))
+    //         }
+    //         Ok(_) => panic!("Not supposed to happen"),
+    //     }
+    // }
+}
 // mod string {
 //     use spanned_json_parser::{
 //         parse,

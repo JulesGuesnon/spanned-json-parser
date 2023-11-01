@@ -1,5 +1,8 @@
 use crate::error::{Error, Kind};
 use crate::value::{Number, Position, SpannedValue, Value};
+use nom::bytes::complete::take_until;
+use nom::combinator::eof;
+use nom::multi::many_till;
 use nom::{
     branch::alt,
     bytes::complete::{escaped, tag, take, take_while},
@@ -17,6 +20,7 @@ use std::num::ParseIntError;
 pub type Span<'a> = LocatedSpan<&'a str>;
 
 type Result<'a, R> = IResult<Span<'a>, R, Error>;
+type ParseResult = std::result::Result<SpannedValue, Error>;
 
 fn boolean(input: Span) -> Result<bool> {
     let parse_true = value(true, tag("true"));
@@ -31,22 +35,22 @@ fn null(input: Span) -> Result<()> {
 }
 
 fn u16_hex(i: Span) -> Result<u16> {
-    let start = Position::from(i);
-
     map_res(take(4usize), |s: Span| {
         u16::from_str_radix(s.fragment(), 16)
     })(i)
-    .map_err(|e: Err<ParseIntError>| {
-        let mut end = start.clone();
-        end.col += 4;
+    .map_err(|mut e: Err<Error>| match e {
+        Err::Error(mut e) => {
+            let mut end = e.start.clone();
+            end.col += 4;
 
-        let number = i.fragment().get(0..4).unwrap_or("");
+            let number = i.fragment().get(0..4).unwrap_or("");
 
-        nom::Err::Error(Error::new(
-            start,
-            end,
-            Kind::InvalidHex(format!("'{}' is an invalid hex number", number)),
-        ))
+            e.end = end;
+            e.value = Kind::InvalidHex(format!("'{}' is an invalid hex number", number));
+
+            Err::Error(e)
+        }
+        _ => panic!("map_res didn't return Error"),
     })
 }
 
@@ -99,17 +103,29 @@ fn parse_char(i: Span) -> Result<char> {
 }
 
 fn string(i: Span<'_>) -> Result<String> {
-    context(
-        "string",
-        delimited(
-            char('"'),
-            fold_many0(parse_char, String::new, |mut string, c| {
-                string.push(c);
-                string
-            }),
-            cut(char('"')),
-        ),
+    let start = Position::from(i);
+
+    delimited(
+        char('"'),
+        fold_many0(parse_char, String::new, |mut string, c| {
+            string.push(c);
+            string
+        }),
+        cut(char('"')),
     )(i)
+    .map_err(|e| match e {
+        Err::Incomplete(_) => panic!("String: Incomplete error happened"),
+        Err::Error(mut e) => {
+            e.start = start;
+            e.value = Kind::InvalidString;
+            Err::Error(e)
+        }
+        Err::Failure(mut e) => {
+            e.start = start;
+            e.value = Kind::MissingQuote;
+            Err::Failure(e)
+        }
+    })
 }
 
 type Sign = Option<char>;
@@ -117,21 +133,18 @@ type ParsedNumber<'a> = (Span<'a>, Option<(char, Span<'a>)>);
 type Exp<'a> = Option<(char, Option<char>, Span<'a>)>;
 
 fn number(i: Span) -> Result<Number> {
-    let (i, matched) = context(
-        "number",
+    let (i, matched) = tuple((
+        opt(char('-')),
         tuple((
-            opt(char('-')),
-            tuple((
-                verify(digit1, |i: &Span| {
-                    let frag = i.fragment();
+            verify(digit1, |i: &Span| {
+                let frag = i.fragment();
 
-                    !(frag.len() > 1 && frag.starts_with('0'))
-                }),
-                opt(complete(pair(char('.'), digit1))),
-            )),
-            opt(complete(tuple((one_of("eE"), opt(one_of("-+")), digit1)))),
+                !(frag.len() > 1 && frag.starts_with('0'))
+            }),
+            opt(complete(pair(char('.'), digit1))),
         )),
-    )(i)?;
+        opt(complete(tuple((one_of("eE"), opt(one_of("-+")), digit1)))),
+    ))(i)?;
 
     let (sign, (body, decimal), exp): (Sign, ParsedNumber, Exp) = matched;
 
@@ -156,19 +169,9 @@ fn number(i: Span) -> Result<Number> {
     );
 
     let result = match (sign, decimal.is_some(), exp.is_some()) {
-        ("", false, false) => formatted
-            .parse()
-            .map(Number::PosInt)
-            .map_err(|_| nom::error::Error::new(i, nom::error::ErrorKind::TooLarge)),
-        ("-", false, false) => formatted
-            .parse()
-            .map(Number::NegInt)
-            .map_err(|_| nom::error::Error::new(i, nom::error::ErrorKind::TooLarge)),
-        _ => formatted
-            .parse()
-            .map(Number::Float)
-            .map_err(|_| nom::error::Error::new(i, nom::error::ErrorKind::TooLarge)),
-        _ => panic!("Not supposed to happen"),
+        ("", false, false) => formatted.parse().map(Number::PosInt).map_err(Into::into),
+        ("-", false, false) => formatted.parse().map(Number::NegInt).map_err(Into::into),
+        _ => formatted.parse().map(Number::Float).map_err(Into::into),
     }
     .map_err(nom::Err::Failure);
 
@@ -176,25 +179,59 @@ fn number(i: Span) -> Result<Number> {
 }
 
 fn array(i: Span) -> Result<Vec<SpannedValue>> {
-    context(
-        "array",
-        preceded(
-            char('['),
-            cut(terminated(
-                separated_list0(preceded(multispace0, char(',')), json_value),
-                preceded(multispace0, char(']')),
-            )),
-        ),
+    let start = Position::from(i);
+
+    preceded(
+        char('['),
+        cut(terminated(
+            separated_list0(preceded(multispace0, char(',')), json_value),
+            preceded(multispace0, char(']')),
+        )),
     )(i)
+    .map_err(|e| match e {
+        Err::Incomplete(_) => panic!("Array: Incomplete error happened"),
+        Err::Error(mut e) => {
+            e.value = Kind::InvalidString;
+            Err::Error(e)
+        }
+        Err::Failure(mut e) => {
+            // If not nom error then it's another failure of a json value
+            if let Kind::NomError(_) = e.value {
+                e.value = Kind::MissingArrayBracket;
+            };
+
+            Err::Failure(e)
+        }
+    })
 }
 
 fn key_value(i: Span<'_>) -> Result<(String, SpannedValue)> {
-    separated_pair(
-        preceded(multispace0, string),
-        cut(preceded(multispace0, char(':'))),
-        json_value,
-    )
-    .parse(i)
+    let (i, key) = preceded(multispace0, string)(i).or_else(|e| match e {
+        Err::Error(mut e) => {
+            let (i, (key, _)) = many_till(anychar, one_of(" :"))(i)?;
+            e.value = Kind::InvalidKey(key.into_iter().collect());
+            let end = Position {
+                line: i.location_line() as usize,
+                col: i.naive_get_utf8_column() - 2,
+            };
+            e.end = end;
+            Err(Err::Failure(e))
+        }
+        Err::Incomplete(_) => panic!("Key Value: Incomplete not supposed to happen"),
+        e => Err(e),
+    })?;
+
+    let (i, _) = cut(preceded(multispace0, char(':')))(i).map_err(|e: Err<Error>| match e {
+        Err::Failure(mut e) => {
+            e.value = Kind::MissingColon;
+            Err::Failure(e)
+        }
+        e => e,
+    })?;
+
+    let (i, value) = json_value(i)?;
+
+    Ok((i, (key, value)))
 }
 
 fn hash(i: Span<'_>) -> Result<HashMap<String, SpannedValue>> {
@@ -229,22 +266,50 @@ fn json_value(i: Span) -> Result<SpannedValue> {
 
     let (i, pos) = position(i)?;
 
-    let end = Position::from(pos);
+    let end = Position::from_end(pos);
 
     Ok((i, SpannedValue { start, end, value }))
 }
 
-pub fn parse(s: &str) -> std::result::Result<SpannedValue, String> {
+pub fn end_chars(i: Span) -> std::result::Result<(Span, ()), Error> {
+    let (rest, _) = unwrap_nom_error(many0(multispace1)(i))?;
+
+    if rest.fragment() == &"" {
+        return Ok((rest, ()));
+    }
+
+    let (rest, start) = unwrap_nom_error(position(rest))?;
+
+    let start = Position::from(start);
+
+    let (end, _) = unwrap_nom_error(many_till(anychar, eof)(rest))?;
+    let (_, end) = unwrap_nom_error(position(end))?;
+
+    Err(Error::new(
+        start,
+        Position::from_end(end),
+        Kind::CharsAfterRoot(format!(
+            "Unexpected chararacters at the end: {}",
+            rest.fragment()
+        )),
+    ))
+}
+
+pub fn unwrap_nom_error<T>(value: Result<T>) -> std::result::Result<(Span, T), Error> {
+    match value {
+        Ok(v) => Ok(v),
+        Err(nom::Err::Error(e)) => Err(e),
+        Err(nom::Err::Failure(e)) => Err(e),
+        Err(nom::Err::Incomplete(_)) => panic!("Got Incomplete error"),
+    }
+}
+
+pub fn parse(s: &str) -> ParseResult {
     let span = Span::new(s);
 
-    let (i, value) = json_value(span).map_err(|e| e.to_string())?;
+    let (i, value) = unwrap_nom_error(json_value(span))?;
 
-    let (rest, _) =
-        many0(multispace1)(i).map_err(|e: nom::Err<nom::error::Error<Span>>| e.to_string())?;
+    let _ = end_chars(i)?;
 
-    if rest.fragment() != &"" {
-        Err(String::from(*rest.fragment()))
-    } else {
-        Ok(value)
-    }
+    Ok(value)
 }

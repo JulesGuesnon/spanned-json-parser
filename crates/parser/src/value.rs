@@ -86,7 +86,7 @@ impl Value {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct Position {
     pub col: usize,
     pub line: usize,
@@ -105,11 +105,22 @@ impl Display for SpannedValue {
     }
 }
 
+impl Position {
+    pub fn from_end<T: nom::AsBytes>(val: LocatedSpan<T>) -> Self {
+        Self {
+            line: val.location_line() as usize,
+            // We get end position after the structure is parsed
+            // So the last char has already been eaten
+            col: val.naive_get_utf8_column() - 1,
+        }
+    }
+}
+
 impl<T: nom::AsBytes> From<LocatedSpan<T>> for Position {
     fn from(val: LocatedSpan<T>) -> Self {
-        Position {
+        Self {
             line: val.location_line() as usize,
-            col: val.naive_get_utf8_column() - 1,
+            col: val.naive_get_utf8_column(),
         }
     }
 }

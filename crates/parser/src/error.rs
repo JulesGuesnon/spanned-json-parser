@@ -1,16 +1,46 @@
 use crate::{parser::Span, value::Position};
 use nom::error::{ErrorKind, FromExternalError, ParseError};
 use std::num::IntErrorKind;
+use std::num::ParseFloatError;
 use std::num::ParseIntError;
 
+#[derive(Debug, PartialEq)]
 pub enum Kind {
-    Invalid(String),
-    Missing(String),
+    InvalidString,
+    MissingQuote,
+    MissingArrayBracket,
+    MissingObjectBracket,
+    InvalidKey(String),
+    MissingColon,
     InvalidHex(String),
-    NomError(String),
     InvalidNumber(String),
+    CharsAfterRoot(String),
+    NomError(nom::error::ErrorKind),
+    // Used when an error will be remaped
+    ToBeDefined,
 }
 
+// impl Kind {
+//     pub fn same(&self, other: &Self) -> bool {
+//         #[allow(clippy::match_like_matches_macro)]
+//         match (self, other) {
+//             (Kind::InvalidString, Kind::InvalidString)
+//             | (Kind::MissingQuote, Kind::MissingQuote)
+//             | (Kind::InvalidHex(_), Kind::InvalidHex(_))
+//             | (Kind::InvalidNumber(_), Kind::InvalidNumber(_))
+//             | (Kind::CharsAfterRoot(_), Kind::CharsAfterRoot(_))
+//             | (Kind::ToBeDefined, Kind::ToBeDefined)
+//             | (Kind::MissingArrayBracket, Kind::MissingArrayBracket)
+//             | (Kind::MissingObjectBracket, Kind::MissingObjectBracket)
+//             | (Kind::InvalidKey, Kind::InvalidKey)
+//             | (Kind::MissingColon, Kind::MissingColon)
+//             | (Kind::NomError(_), Kind::NomError(_)) => true,
+//             _ => false,
+//         }
+//     }
+// }
+
+#[derive(Debug)]
 pub struct Error {
     pub start: Position,
     pub end: Position,
@@ -23,13 +53,63 @@ impl Error {
     }
 }
 
+impl From<ParseIntError> for Error {
+    fn from(value: ParseIntError) -> Self {
+        let position = Position::default();
+        match value.kind() {
+            IntErrorKind::Empty => Self::new(
+                position.clone(),
+                position,
+                Kind::InvalidNumber("Failed to parsed number. Reason: empty".into()),
+            ),
+            IntErrorKind::InvalidDigit => Self::new(
+                position.clone(),
+                position,
+                Kind::InvalidNumber("Failed to parsed number. Reason: not a valid number".into()),
+            ),
+            IntErrorKind::PosOverflow => Self::new(
+                position.clone(),
+                position,
+                Kind::InvalidNumber("Failed to parsed number. Reason: number too large".into()),
+            ),
+            IntErrorKind::NegOverflow => Self::new(
+                position.clone(),
+                position,
+                Kind::InvalidNumber("Failed to parsed number. Reason: number too small".into()),
+            ),
+            IntErrorKind::Zero => Self::new(
+                position.clone(),
+                position,
+                Kind::InvalidNumber("Failed to parsed number. Reason: zero".into()),
+            ),
+            _ => Self::new(
+                position.clone(),
+                position,
+                Kind::InvalidNumber("Failed to parsed number. Reason: unknown".into()),
+            ),
+        }
+    }
+}
+
+impl From<ParseFloatError> for Error {
+    fn from(value: ParseFloatError) -> Self {
+        let position = Position::default();
+
+        Self::new(
+            position.clone(),
+            position,
+            Kind::InvalidNumber("Failed to parsed number. Reason: not a valid float".into()),
+        )
+    }
+}
+
 impl<'a> ParseError<Span<'a>> for Error {
     fn from_error_kind(input: Span<'a>, kind: ErrorKind) -> Self {
         let position = Position::from(input);
         Self {
             start: position.clone(),
             end: position,
-            value: Kind::NomError(kind.description().to_owned()),
+            value: Kind::NomError(kind),
         }
     }
 
@@ -38,21 +118,10 @@ impl<'a> ParseError<Span<'a>> for Error {
     }
 }
 
-impl<'a> FromExternalError<Span<'a>, ParseIntError> for Error {
-    fn from_external_error(input: Span<'a>, kind: ErrorKind, e: ParseIntError) -> Self {
+impl<'a, T> FromExternalError<Span<'a>, T> for Error {
+    fn from_external_error(input: Span<'a>, kind: ErrorKind, e: T) -> Self {
         let position = Position::from(input);
 
-        match e.kind() {
-            IntErrorKind::Empty => Self::new(
-                position,
-                position,
-                Kind::InvalidNumber("Failed to parse the number. Reason: empty".to_owned()),
-            ),
-            IntErrorKind::InvalidDigit => todo!(),
-            IntErrorKind::PosOverflow => todo!(),
-            IntErrorKind::NegOverflow => todo!(),
-            IntErrorKind::Zero => todo!(),
-            _ => todo!(),
-        }
+        Self::new(position.clone(), position, Kind::ToBeDefined)
     }
 }

@@ -2,9 +2,9 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::all)]
 
-mod error;
 mod parser;
 mod ser;
 
+pub mod error;
 pub mod value;
 pub use parser::parse;
