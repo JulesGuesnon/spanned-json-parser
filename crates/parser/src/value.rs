@@ -86,7 +86,7 @@ impl Value {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Position {
     pub col: usize,
     pub line: usize,

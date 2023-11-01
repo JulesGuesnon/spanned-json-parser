@@ -1,5 +1,5 @@
-use std::{collections::HashMap, error::Error, result};
-
+use crate::error::{Error, Kind};
+use crate::value::{Number, Position, SpannedValue, Value};
 use nom::{
     branch::alt,
     bytes::complete::{escaped, tag, take, take_while},
@@ -11,12 +11,14 @@ use nom::{
     Err, IResult, Parser,
 };
 use nom_locate::{position, LocatedSpan};
-
-use crate::value::{Number, Position, SpannedValue, Value};
+use std::collections::HashMap;
+use std::num::ParseIntError;
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
-fn boolean(input: Span) -> IResult<Span, bool> {
+type Result<'a, R> = IResult<Span<'a>, R, Error>;
+
+fn boolean(input: Span) -> Result<bool> {
     let parse_true = value(true, tag("true"));
 
     let parse_false = value(false, tag("false"));
@@ -24,17 +26,31 @@ fn boolean(input: Span) -> IResult<Span, bool> {
     alt((parse_true, parse_false)).parse(input)
 }
 
-fn null(input: Span) -> IResult<Span, ()> {
+fn null(input: Span) -> Result<()> {
     value((), tag("null")).parse(input)
 }
 
-fn u16_hex(i: Span) -> IResult<Span, u16> {
+fn u16_hex(i: Span) -> Result<u16> {
+    let start = Position::from(i);
+
     map_res(take(4usize), |s: Span| {
         u16::from_str_radix(s.fragment(), 16)
     })(i)
+    .map_err(|e: Err<ParseIntError>| {
+        let mut end = start.clone();
+        end.col += 4;
+
+        let number = i.fragment().get(0..4).unwrap_or("");
+
+        nom::Err::Error(Error::new(
+            start,
+            end,
+            Kind::InvalidHex(format!("'{}' is an invalid hex number", number)),
+        ))
+    })
 }
 
-fn unicode_escape(i: Span) -> IResult<Span, char> {
+fn unicode_escape(i: Span) -> Result<char> {
     map_opt(
         alt((
             // Not a surrogate
@@ -59,7 +75,7 @@ fn unicode_escape(i: Span) -> IResult<Span, char> {
     )(i)
 }
 
-fn parse_char(i: Span) -> IResult<Span, char> {
+fn parse_char(i: Span) -> Result<char> {
     let (i, c) = none_of("\"")(i)?;
 
     if c == '\\' {
@@ -82,7 +98,7 @@ fn parse_char(i: Span) -> IResult<Span, char> {
     }
 }
 
-fn string(i: Span<'_>) -> IResult<Span, String> {
+fn string(i: Span<'_>) -> Result<String> {
     context(
         "string",
         delimited(
@@ -100,7 +116,7 @@ type Sign = Option<char>;
 type ParsedNumber<'a> = (Span<'a>, Option<(char, Span<'a>)>);
 type Exp<'a> = Option<(char, Option<char>, Span<'a>)>;
 
-fn number(i: Span) -> IResult<Span, Number> {
+fn number(i: Span) -> Result<Number> {
     let (i, matched) = context(
         "number",
         tuple((
@@ -159,7 +175,7 @@ fn number(i: Span) -> IResult<Span, Number> {
     Ok((i, result?))
 }
 
-fn array(i: Span) -> IResult<Span, Vec<SpannedValue>> {
+fn array(i: Span) -> Result<Vec<SpannedValue>> {
     context(
         "array",
         preceded(
@@ -172,7 +188,7 @@ fn array(i: Span) -> IResult<Span, Vec<SpannedValue>> {
     )(i)
 }
 
-fn key_value(i: Span<'_>) -> IResult<Span, (String, SpannedValue)> {
+fn key_value(i: Span<'_>) -> Result<(String, SpannedValue)> {
     separated_pair(
         preceded(multispace0, string),
         cut(preceded(multispace0, char(':'))),
@@ -181,7 +197,7 @@ fn key_value(i: Span<'_>) -> IResult<Span, (String, SpannedValue)> {
     .parse(i)
 }
 
-fn hash(i: Span<'_>) -> IResult<Span, HashMap<String, SpannedValue>> {
+fn hash(i: Span<'_>) -> Result<HashMap<String, SpannedValue>> {
     let (i, result) = preceded(
         char('{'),
         cut(terminated(
@@ -196,7 +212,7 @@ fn hash(i: Span<'_>) -> IResult<Span, HashMap<String, SpannedValue>> {
     Ok((i, result))
 }
 
-fn json_value(i: Span) -> IResult<Span, SpannedValue> {
+fn json_value(i: Span) -> Result<SpannedValue> {
     let (i, _) = many0(multispace1)(i)?;
 
     let (i, pos) = position(i)?;
@@ -218,7 +234,7 @@ fn json_value(i: Span) -> IResult<Span, SpannedValue> {
     Ok((i, SpannedValue { start, end, value }))
 }
 
-pub fn parse(s: &str) -> Result<SpannedValue, String> {
+pub fn parse(s: &str) -> std::result::Result<SpannedValue, String> {
     let span = Span::new(s);
 
     let (i, value) = json_value(span).map_err(|e| e.to_string())?;
