@@ -15,41 +15,41 @@ pub enum Kind {
     InvalidHex(String),
     InvalidNumber(String),
     CharsAfterRoot(String),
+    InvalidBool,
+    InvalidNull,
+    NotAnObject,
+    NotAnArray,
+    NotANumber,
+    InvalidValue(String),
     NomError(nom::error::ErrorKind),
     // Used when an error will be remaped
     ToBeDefined,
 }
 
-// impl Kind {
-//     pub fn same(&self, other: &Self) -> bool {
-//         #[allow(clippy::match_like_matches_macro)]
-//         match (self, other) {
-//             (Kind::InvalidString, Kind::InvalidString)
-//             | (Kind::MissingQuote, Kind::MissingQuote)
-//             | (Kind::InvalidHex(_), Kind::InvalidHex(_))
-//             | (Kind::InvalidNumber(_), Kind::InvalidNumber(_))
-//             | (Kind::CharsAfterRoot(_), Kind::CharsAfterRoot(_))
-//             | (Kind::ToBeDefined, Kind::ToBeDefined)
-//             | (Kind::MissingArrayBracket, Kind::MissingArrayBracket)
-//             | (Kind::MissingObjectBracket, Kind::MissingObjectBracket)
-//             | (Kind::InvalidKey, Kind::InvalidKey)
-//             | (Kind::MissingColon, Kind::MissingColon)
-//             | (Kind::NomError(_), Kind::NomError(_)) => true,
-//             _ => false,
-//         }
-//     }
-// }
-
 #[derive(Debug)]
 pub struct Error {
     pub start: Position,
     pub end: Position,
-    pub value: Kind,
+    pub kind: Kind,
 }
 
 impl Error {
     pub fn new(start: Position, end: Position, value: Kind) -> Self {
-        Self { start, end, value }
+        Self {
+            start,
+            end,
+            kind: value,
+        }
+    }
+}
+
+impl Default for Error {
+    fn default() -> Self {
+        Self {
+            start: Position::default(),
+            end: Position::default(),
+            kind: Kind::ToBeDefined,
+        }
     }
 }
 
@@ -106,15 +106,22 @@ impl From<ParseFloatError> for Error {
 impl<'a> ParseError<Span<'a>> for Error {
     fn from_error_kind(input: Span<'a>, kind: ErrorKind) -> Self {
         let position = Position::from(input);
+
         Self {
             start: position.clone(),
             end: position,
-            value: Kind::NomError(kind),
+            kind: Kind::NomError(kind),
         }
     }
 
     fn append(input: Span<'a>, kind: ErrorKind, other: Self) -> Self {
-        other
+        let pos = Position::from(input);
+
+        Self {
+            start: pos.clone(),
+            end: pos,
+            kind: Kind::NomError(kind),
+        }
     }
 }
 

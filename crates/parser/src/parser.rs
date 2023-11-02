@@ -1,7 +1,8 @@
 use crate::error::{Error, Kind};
 use crate::value::{Number, Position, SpannedValue, Value};
-use nom::bytes::complete::take_until;
+use nom::bytes::complete::{take_till, take_until};
 use nom::combinator::eof;
+use nom::error::{ErrorKind, ParseError};
 use nom::multi::many_till;
 use nom::{
     branch::alt,
@@ -19,19 +20,42 @@ use std::num::ParseIntError;
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
-type Result<'a, R> = IResult<Span<'a>, R, Error>;
-type ParseResult = std::result::Result<SpannedValue, Error>;
+pub type Result<'a, R> = IResult<Span<'a>, R, Error>;
+pub type ParseResult = std::result::Result<SpannedValue, Error>;
 
-fn take_until_delimiter(i: Span) -> Result<String> {
-    many_till(anychar, one_of(" ,]}:"))(i).map(|(i, (chars, a))| (i, chars.into_iter().collect()))
+fn take_until_delimiter(i: Span, is_key: bool) -> Result<String> {
+    let mut chars = String::from(" ,]}\n");
+    if is_key {
+        chars = format!("{}{}", chars, ':');
+    }
+
+    take_till(move |c| chars.contains(c))(i).map(|(i, found)| (i, String::from(*found.fragment())))
 }
 
-fn boolean(input: Span) -> Result<bool> {
+fn map_err<'a, P, I, O, E, G>(mut parser: P, mut func: G) -> impl FnMut(I) -> IResult<I, O, E>
+where
+    P: Parser<I, O, E>,
+    G: FnMut(Err<E>) -> Err<E>,
+    E: ParseError<I>,
+    I: Clone,
+{
+    move |i: I| {
+        let i = i.clone();
+        let result = parser.parse(i);
+
+        match result {
+            Err(e) => Err(func(e)),
+            v => v,
+        }
+    }
+}
+
+fn boolean(i: Span) -> Result<bool> {
     let parse_true = value(true, tag("true"));
 
     let parse_false = value(false, tag("false"));
 
-    alt((parse_true, parse_false)).parse(input)
+    alt((parse_true, parse_false)).parse(i)
 }
 
 fn null(input: Span) -> Result<()> {
@@ -50,7 +74,7 @@ fn u16_hex(i: Span) -> Result<u16> {
             let number = i.fragment().get(0..4).unwrap_or("");
 
             e.end = end;
-            e.value = Kind::InvalidHex(format!("'{}' is an invalid hex number", number));
+            e.kind = Kind::InvalidHex(format!("'{}' is an invalid hex number", number));
 
             Err::Error(e)
         }
@@ -121,13 +145,13 @@ fn string(i: Span<'_>) -> Result<String> {
         Err::Incomplete(_) => panic!("String: Incomplete error happened"),
         Err::Error(mut e) => {
             e.start = start;
-            e.value = Kind::InvalidString;
+            e.kind = Kind::InvalidString;
             Err::Error(e)
         }
         Err::Failure(mut e) => {
             e.start = start;
             e.end.col -= 1;
-            e.value = Kind::MissingQuote;
+            e.kind = Kind::MissingQuote;
             Err::Failure(e)
         }
     })
@@ -140,58 +164,33 @@ type Exp<'a> = Option<(char, Option<char>, Span<'a>)>;
 fn number(i: Span) -> Result<Number> {
     let start = Position::from(i);
 
-    let (i, matched) = tuple((
+    let (i, (sign, digit)) = tuple((
         opt(char('-')),
-        tuple((
-            verify(digit1, |i: &Span| {
-                let frag = i.fragment();
+        verify(digit1, |i: &Span| {
+            let frag = i.fragment();
 
-                !(frag.len() > 1 && frag.starts_with('0'))
-            }),
-            opt(complete(pair(char('.'), digit1))),
-        )),
-        opt(complete(tuple((one_of("eE"), opt(one_of("-+")), digit1)))),
+            !(frag.len() > 1 && frag.starts_with('0'))
+        }),
     ))(i)
-    .or_else(|_: nom::Err<Error>| {
-        let (i, number) = take_until_delimiter(i)?;
-
-        Err(Err::Error(Error::new(
-            start,
-            Position::from_end(i),
-            Kind::InvalidNumber(number),
-        )))
+    .map_err(|_: Err<Error>| {
+        Err::Error(Error::new(start.clone(), start.clone(), Kind::NotANumber))
     })?;
 
-    let (sign, (body, decimal), exp): (Sign, ParsedNumber, Exp) = matched;
+    let (i, rest) = take_until_delimiter(i, false)?;
 
     let sign = sign.map(|_| "-").unwrap_or("");
 
-    let formatted = format!(
-        "{}{}{}{}",
-        sign,
-        body.fragment(),
-        match decimal {
-            Some((_, number)) => format!(".{}", number.fragment()),
-            None => String::new(),
-        },
-        match exp {
-            Some((_, sign, number)) => {
-                let sign = sign.map(|c| if c == '+' { "" } else { "-" }).unwrap_or("");
+    let formatted = format!("{}{}{}", sign, digit.fragment(), rest);
 
-                format!("e{}{}", sign, number.fragment())
-            }
-            None => String::new(),
-        }
-    );
+    let number = (if formatted.starts_with('-') {
+        formatted.parse().map(Number::NegInt)
+    } else {
+        formatted.parse().map(Number::PosInt)
+    })
+    .or_else(|_| formatted.parse().map(Number::Float))
+    .map_err(|_| Err::Error(Error::new(start.clone(), start.clone(), Kind::NotANumber)))?;
 
-    let result = match (sign, decimal.is_some(), exp.is_some()) {
-        ("", false, false) => formatted.parse().map(Number::PosInt).map_err(Into::into),
-        ("-", false, false) => formatted.parse().map(Number::NegInt).map_err(Into::into),
-        _ => formatted.parse().map(Number::Float).map_err(Into::into),
-    }
-    .map_err(nom::Err::Failure);
-
-    Ok((i, result?))
+    Ok((i, number))
 }
 
 fn array(i: Span) -> Result<Vec<SpannedValue>> {
@@ -200,50 +199,69 @@ fn array(i: Span) -> Result<Vec<SpannedValue>> {
     preceded(
         char('['),
         cut(terminated(
-            separated_list0(preceded(multispace0, char(',')), json_value),
+            separated_list0(
+                preceded(multispace0, char(',')),
+                map_err(json_value, |e| match e {
+                    Err::Failure(e) if e.kind == Kind::InvalidValue("".into()) => {
+                        // Discarding the failure as empty invalid value means it's an empty array
+                        Err::Error(Error::default())
+                    }
+                    v => v,
+                }),
+            ),
             preceded(multispace0, char(']')),
         )),
     )(i)
     .map_err(|e| match e {
-        Err::Incomplete(_) => panic!("Array: Incomplete error happened"),
-        Err::Error(mut e) => {
-            e.value = Kind::InvalidString;
-            Err::Error(e)
-        }
         Err::Failure(mut e) => {
+            println!("Failure: {:?}", e);
             // If not nom error then it's another failure of a json value
-            if let Kind::NomError(_) = e.value {
-                e.value = Kind::MissingArrayBracket;
+            if let Kind::NomError(_) = e.kind {
+                e.kind = Kind::MissingArrayBracket;
                 e.start = start;
                 e.end.col -= 1;
             };
 
             Err::Failure(e)
         }
+        Err::Error(mut e) if e.kind == Kind::NomError(ErrorKind::Char) => {
+            e.kind = Kind::NotAnArray;
+            Err::Error(e)
+        }
+        e => e,
     })
 }
 
 fn key_value(i: Span<'_>) -> Result<(String, SpannedValue)> {
-    let (i, key) = preceded(multispace0, string)(i).or_else(|e| match e {
-        Err::Error(mut e) => {
-            let (i, key) = take_until_delimiter(i)?;
+    let (i, key) = preceded(multispace0, string)(i).or_else(|e| {
+        match e {
+            Err::Error(mut e) => {
+                // Before failing if the key is invalid, we check if the object is empty
+                let pos_before_space = Position::from(i);
 
-            e.value = Kind::InvalidKey(key);
-            let end = Position {
-                line: i.location_line() as usize,
-                // We go back to the end of the key
-                col: i.naive_get_utf8_column() - 2,
-            };
-            e.end = end;
-            Err(Err::Failure(e))
+                let (i, _) = multispace0(i)?;
+
+                if i.starts_with('}') || i.is_empty() {
+                    Err(Err::Error(e))
+                } else {
+                    let (i, key) = take_until_delimiter(i, true)?;
+                    if key.is_empty() {
+                        e.start = pos_before_space;
+                    }
+                    e.kind = Kind::InvalidKey(key);
+                    let end = Position::from_end(i);
+                    e.end = end;
+
+                    Err(Err::Failure(e))
+                }
+            }
+            e => Err(e),
         }
-        Err::Incomplete(_) => panic!("Key Value: Incomplete not supposed to happen"),
-        e => Err(e),
     })?;
 
     let (i, _) = cut(preceded(multispace0, char(':')))(i).map_err(|e: Err<Error>| match e {
         Err::Failure(mut e) => {
-            e.value = Kind::MissingColon;
+            e.kind = Kind::MissingColon;
             let pos = Position::from(i);
             e.start = pos.clone();
             e.end = pos;
@@ -271,21 +289,21 @@ fn hash(i: Span<'_>) -> Result<HashMap<String, SpannedValue>> {
         )),
     )(i)
     .map_err(|e| match e {
-        Err::Incomplete(_) => panic!("Array: Incomplete error happened"),
-        Err::Error(mut e) => {
-            e.value = Kind::InvalidString;
-            Err::Error(e)
-        }
         Err::Failure(mut e) => {
-            // If not nom error then it's another failure of a json value
-            if let Kind::NomError(_) = e.value {
-                e.value = Kind::MissingObjectBracket;
+            // If not nom error then it's another failure inside key_value
+            if let Kind::NomError(_) = e.kind {
+                e.kind = Kind::MissingObjectBracket;
                 e.start = start;
                 e.end.col -= 1;
             };
 
             Err::Failure(e)
         }
+        Err::Error(mut e) if e.kind == Kind::NomError(ErrorKind::Char) => {
+            e.kind = Kind::NotAnObject;
+            Err::Error(e)
+        }
+        e => e,
     })
 }
 
@@ -302,10 +320,17 @@ fn json_value(i: Span) -> Result<SpannedValue> {
         map(boolean, Value::Bool),
         map(null, |_| Value::Null),
     ))(i)
-    .map_err(|e| {
-        println!("{:?}", e);
+    .or_else(|e| match e {
+        Err::Error(e) if e.kind == Kind::NomError(ErrorKind::Alt) => {
+            let (i, value) = take_until_delimiter(i, false)?;
 
-        e
+            Err(Err::Failure(Error::new(
+                start.clone(),
+                Position::from_end(i),
+                Kind::InvalidValue(value),
+            )))
+        }
+        e => Err(e),
     })?;
 
     let end = Position::from_end(i);

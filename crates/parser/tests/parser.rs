@@ -1,4 +1,4 @@
-use spanned_json_parser::parse;
+use spanned_json_parser::{parse, value::Number};
 
 #[test]
 fn parse_basic() {
@@ -25,34 +25,75 @@ fn parse_basic() {
     assert_eq!(spanned_value.start.col, 5);
     assert_eq!(spanned_value.end.line, 15);
     assert_eq!(spanned_value.end.col, 5);
+
+    let root = spanned_value.value.unwrap_object();
+    let vec = root.get("vec").unwrap().value.unwrap_array();
+
+    let num_obj = vec.get(0).unwrap().value.unwrap_object();
+
+    assert_eq!(
+        num_obj.get("num1").unwrap().value.unwrap_number(),
+        &Number::PosInt(1)
+    );
+    assert_eq!(
+        num_obj.get("num2").unwrap().value.unwrap_number(),
+        &Number::Float(1.2)
+    );
+
+    assert_eq!(
+        num_obj.get("num3").unwrap().value.unwrap_number(),
+        &Number::Float(1.2e12)
+    );
+
+    assert_eq!(
+        num_obj.get("num4").unwrap().value.unwrap_number(),
+        &Number::NegInt(-12)
+    );
 }
 
 mod error {
     use spanned_json_parser::{error::Kind, parse};
 
-    // #[test]
-    // fn invalid_json_value() {
-    //     let json = r#"'sussy string'"#;
-    //
-    //     let parsed = parse(json);
-    //
-    //     assert!(parsed.is_err());
-    //
-    //     match parsed {
-    //         Err(e) => {
-    //             assert_eq!(e.start.line, 1);
-    //             assert_eq!(e.start.col, 1);
-    //             assert_eq!(e.end.line, 1);
-    //             assert_eq!(e.end.col, 17);
-    //             assert_eq!(e.value, Kind::MissingQuote);
-    //         }
-    //         Ok(_) => panic!("Not supposed to happen"),
-    //     }
-    // }
+    #[test]
+    fn invalid_root_json_value() {
+        let json = r#"'sussy string'"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 1);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 6);
+                assert_eq!(e.kind, Kind::InvalidValue("'sussy".into()));
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+    }
 
     #[test]
-    fn invalid_key() {
-        let json = r#"{12: "world"}"#;
+    fn invalid_nested_json_value() {
+        let json = r#"{"hello": 123aze}"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 11);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 16);
+                assert_eq!(e.kind, Kind::InvalidValue("123aze".into()));
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+
+        let json = r#"[123aze]"#;
 
         let parsed = parse(json);
 
@@ -63,8 +104,83 @@ mod error {
                 assert_eq!(e.start.line, 1);
                 assert_eq!(e.start.col, 2);
                 assert_eq!(e.end.line, 1);
-                assert_eq!(e.end.col, 3);
-                assert_eq!(e.value, Kind::InvalidKey("12".into()));
+                assert_eq!(e.end.col, 7);
+                assert_eq!(e.kind, Kind::InvalidValue("123aze".into()));
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+
+        let json = r#"{"hello": nul }"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 11);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 13);
+                assert_eq!(e.kind, Kind::InvalidValue("nul".into()));
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+
+        let json = r#"{"hello": vrai 
+        }"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 11);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 14);
+                assert_eq!(e.kind, Kind::InvalidValue("vrai".into()));
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+    }
+
+    #[test]
+    fn invalid_key() {
+        let json = r#"{   12: "world"}"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 5);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 6);
+                assert_eq!(e.kind, Kind::InvalidKey("12".into()));
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+    }
+
+    #[test]
+    fn missing_key() {
+        let json = r#"{   : "world"}"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 2);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 4);
+                assert_eq!(e.kind, Kind::InvalidKey("".into()));
             }
             Ok(_) => panic!("Not supposed to happen"),
         }
@@ -84,7 +200,7 @@ mod error {
                 assert_eq!(e.start.col, 9);
                 assert_eq!(e.end.line, 1);
                 assert_eq!(e.end.col, 9);
-                assert_eq!(e.value, Kind::MissingColon);
+                assert_eq!(e.kind, Kind::MissingColon);
             }
             Ok(_) => panic!("Not supposed to happen"),
         }
@@ -104,7 +220,7 @@ mod error {
                 assert_eq!(e.start.col, 2);
                 assert_eq!(e.end.line, 1);
                 assert_eq!(e.end.col, 7);
-                assert_eq!(e.value, Kind::MissingQuote);
+                assert_eq!(e.kind, Kind::MissingQuote);
             }
             Ok(_) => panic!("Not supposed to happen"),
         }
@@ -124,7 +240,7 @@ mod error {
                 assert_eq!(e.start.col, 1);
                 assert_eq!(e.end.line, 1);
                 assert_eq!(e.end.col, 8);
-                assert_eq!(e.value, Kind::MissingArrayBracket);
+                assert_eq!(e.kind, Kind::MissingArrayBracket);
             }
             Ok(_) => panic!("Not supposed to happen"),
         }
@@ -144,7 +260,7 @@ mod error {
                 assert_eq!(e.start.col, 1);
                 assert_eq!(e.end.line, 1);
                 assert_eq!(e.end.col, 11);
-                assert_eq!(e.value, Kind::MissingObjectBracket);
+                assert_eq!(e.kind, Kind::MissingObjectBracket);
             }
             Ok(_) => panic!("Not supposed to happen"),
         }
@@ -164,7 +280,7 @@ mod error {
                 assert_eq!(e.start.col, 9);
                 assert_eq!(e.end.line, 1);
                 assert_eq!(e.end.col, 9);
-                assert_eq!(e.value, Kind::MissingColon);
+                assert_eq!(e.kind, Kind::MissingColon);
             }
             Ok(_) => panic!("Not supposed to happen"),
         }
@@ -184,28 +300,7 @@ mod error {
                 assert_eq!(e.start.col, 11);
                 assert_eq!(e.end.line, 1);
                 assert_eq!(e.end.col, 17);
-                assert_eq!(e.value, Kind::MissingQuote)
-            }
-            Ok(_) => panic!("Not supposed to happen"),
-        }
-    }
-
-    #[test]
-    fn invalid_number() {
-        let json = r#"{"hello": 123ab }"#;
-
-        let parsed = parse(json);
-
-        assert!(parsed.is_err());
-
-        println!("{:?}", parsed);
-        match parsed {
-            Err(e) => {
-                assert_eq!(e.start.line, 1);
-                assert_eq!(e.start.col, 11);
-                assert_eq!(e.end.line, 1);
-                assert_eq!(e.end.col, 15);
-                assert_eq!(e.value, Kind::InvalidNumber("123ab".into()))
+                assert_eq!(e.kind, Kind::MissingQuote)
             }
             Ok(_) => panic!("Not supposed to happen"),
         }
@@ -256,7 +351,7 @@ mod string {
 }
 
 mod number {
-    use spanned_json_parser::parse;
+    use spanned_json_parser::{parse, value::Number};
 
     #[test]
     fn parse_exp() {
@@ -274,7 +369,12 @@ mod number {
 
         let parsed = parse(data);
 
-        assert!(parsed.is_err());
+        assert!(parsed.is_ok());
+        let parsed = parsed.unwrap();
+        let vec = parsed.value.unwrap_array().get(0).unwrap();
+        let num = vec.value.unwrap_number();
+
+        assert_eq!(num, &Number::Float(1e20));
     }
 
     #[test]
@@ -300,7 +400,7 @@ mod number {
 }
 
 mod array {
-    use spanned_json_parser::parse;
+    use spanned_json_parser::{error::Kind, parse};
 
     #[test]
     fn extra_bracket() {
@@ -318,5 +418,112 @@ mod array {
         let parsed = parse(data);
 
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn empty() {
+        let json = "[]";
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_ok());
+
+        let parsed = parsed.unwrap();
+
+        assert_eq!(parsed.value.unwrap_array().len(), 0);
+    }
+
+    #[test]
+    fn nested() {
+        let json = "[  [[[[ ]  ]  ]]]";
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_ok());
+
+        let parsed = parsed.unwrap();
+
+        let parsed = parsed.value.unwrap_array().get(0).unwrap();
+        let parsed = parsed.value.unwrap_array().get(0).unwrap();
+        let parsed = parsed.value.unwrap_array().get(0).unwrap();
+        let parsed = parsed.value.unwrap_array().get(0).unwrap();
+
+        assert_eq!(parsed.value.unwrap_array().len(), 0);
+    }
+
+    #[test]
+    fn nested_missing_bracket() {
+        let json = "[  [[[[   ]  ]]]";
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 1);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 16);
+                assert_eq!(e.kind, Kind::MissingArrayBracket)
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+    }
+}
+
+mod object {
+    use spanned_json_parser::{error::Kind, parse};
+
+    #[test]
+    fn empty() {
+        let json = "{}";
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_ok());
+
+        let parsed = parsed.unwrap();
+
+        assert_eq!(parsed.value.unwrap_object().len(), 0);
+    }
+
+    #[test]
+    fn nested() {
+        let json = r#"{"h": {"e":    {"l": {"l": {"o": {    }  }  }}  }}"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_ok());
+
+        let parsed = parsed.unwrap();
+        let parsed = parsed.value.unwrap_object();
+        let parsed = parsed.get("h").unwrap().value.unwrap_object();
+        let parsed = parsed.get("e").unwrap().value.unwrap_object();
+        let parsed = parsed.get("l").unwrap().value.unwrap_object();
+        let parsed = parsed.get("l").unwrap().value.unwrap_object();
+        let parsed = parsed.get("o").unwrap().value.unwrap_object();
+
+        assert_eq!(parsed.len(), 0);
+    }
+
+    #[test]
+    fn nested_missing_bracket() {
+        let json = r#"{"h": {"e":    {"l": {"l": {"o": {      "#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 34);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 40);
+                assert_eq!(e.kind, Kind::MissingObjectBracket)
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
     }
 }
