@@ -6,17 +6,16 @@ use std::num::ParseIntError;
 
 #[derive(Debug, PartialEq)]
 pub enum Kind {
-    InvalidString,
     MissingQuote,
     MissingArrayBracket,
     MissingObjectBracket,
     InvalidKey(String),
     MissingColon,
-    InvalidHex(String),
-    InvalidNumber(String),
     CharsAfterRoot(String),
-    InvalidBool,
-    InvalidNull,
+    NotAnHex(String),
+    NotAString,
+    NotABool,
+    NotANull,
     NotAnObject,
     NotAnArray,
     NotANumber,
@@ -56,38 +55,7 @@ impl Default for Error {
 impl From<ParseIntError> for Error {
     fn from(value: ParseIntError) -> Self {
         let position = Position::default();
-        match value.kind() {
-            IntErrorKind::Empty => Self::new(
-                position.clone(),
-                position,
-                Kind::InvalidNumber("Failed to parsed number. Reason: empty".into()),
-            ),
-            IntErrorKind::InvalidDigit => Self::new(
-                position.clone(),
-                position,
-                Kind::InvalidNumber("Failed to parsed number. Reason: not a valid number".into()),
-            ),
-            IntErrorKind::PosOverflow => Self::new(
-                position.clone(),
-                position,
-                Kind::InvalidNumber("Failed to parsed number. Reason: number too large".into()),
-            ),
-            IntErrorKind::NegOverflow => Self::new(
-                position.clone(),
-                position,
-                Kind::InvalidNumber("Failed to parsed number. Reason: number too small".into()),
-            ),
-            IntErrorKind::Zero => Self::new(
-                position.clone(),
-                position,
-                Kind::InvalidNumber("Failed to parsed number. Reason: zero".into()),
-            ),
-            _ => Self::new(
-                position.clone(),
-                position,
-                Kind::InvalidNumber("Failed to parsed number. Reason: unknown".into()),
-            ),
-        }
+        Self::new(position.clone(), position, Kind::NotANumber)
     }
 }
 
@@ -95,11 +63,7 @@ impl From<ParseFloatError> for Error {
     fn from(value: ParseFloatError) -> Self {
         let position = Position::default();
 
-        Self::new(
-            position.clone(),
-            position,
-            Kind::InvalidNumber("Failed to parsed number. Reason: not a valid float".into()),
-        )
+        Self::new(position.clone(), position, Kind::NotANumber)
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{env, fs, process};
+use std::{env, fs, process, time::Instant};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -13,8 +13,12 @@ fn main() {
         }
     };
 
+    let start = Instant::now();
+    println!("Starting parsing: {:?}", start);
+
     let parsed = spanned_json_parser::parse(&json);
 
+    println!("Ended parsing: {:?}", start.elapsed());
     match parsed {
         Ok(_) => process::exit(0),
         Err(_) => process::exit(1),

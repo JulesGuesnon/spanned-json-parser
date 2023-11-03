@@ -17,6 +17,7 @@ use nom::{
 use nom_locate::{position, LocatedSpan};
 use std::collections::HashMap;
 use std::num::ParseIntError;
+use std::time::Instant;
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
@@ -32,7 +33,7 @@ fn take_until_delimiter(i: Span, is_key: bool) -> Result<String> {
     take_till(move |c| chars.contains(c))(i).map(|(i, found)| (i, String::from(*found.fragment())))
 }
 
-fn map_err<'a, P, I, O, E, G>(mut parser: P, mut func: G) -> impl FnMut(I) -> IResult<I, O, E>
+fn map_err<P, I, O, E, G>(mut parser: P, mut func: G) -> impl FnMut(I) -> IResult<I, O, E>
 where
     P: Parser<I, O, E>,
     G: FnMut(Err<E>) -> Err<E>,
@@ -74,7 +75,7 @@ fn u16_hex(i: Span) -> Result<u16> {
             let number = i.fragment().get(0..4).unwrap_or("");
 
             e.end = end;
-            e.kind = Kind::InvalidHex(format!("'{}' is an invalid hex number", number));
+            e.kind = Kind::NotAnHex(format!("'{}' is an invalid hex number", number));
 
             Err::Error(e)
         }
@@ -145,7 +146,7 @@ fn string(i: Span<'_>) -> Result<String> {
         Err::Incomplete(_) => panic!("String: Incomplete error happened"),
         Err::Error(mut e) => {
             e.start = start;
-            e.kind = Kind::InvalidString;
+            e.kind = Kind::NotAString;
             Err::Error(e)
         }
         Err::Failure(mut e) => {
