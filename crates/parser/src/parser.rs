@@ -1,4 +1,5 @@
 use crate::error::{Error, Kind};
+use crate::input::Input;
 use crate::value::{Number, Position, SpannedValue, Value};
 use nom::bytes::complete::{take_till, take_until};
 use nom::character::complete::digit0;
@@ -20,7 +21,8 @@ use std::collections::HashMap;
 use std::num::ParseIntError;
 use std::time::Instant;
 
-pub type Span<'a> = LocatedSpan<&'a str>;
+pub type Span<'a> = Input<'a>;
+// pub type Span<'a> = LocatedSpan<&'a str>;
 
 pub type Result<'a, R> = IResult<Span<'a>, R, Error>;
 pub type ParseResult = std::result::Result<SpannedValue, Error>;
@@ -31,7 +33,7 @@ fn take_until_delimiter(i: Span, is_key: bool) -> Result<String> {
         chars = format!("{}{}", chars, ':');
     }
 
-    take_till(move |c| chars.contains(c))(i).map(|(i, found)| (i, String::from(*found.fragment())))
+    take_till(move |c| chars.contains(c))(i).map(|(i, found)| (i, String::from(found.fragment())))
 }
 
 fn map_err<P, I, O, E, G>(mut parser: P, mut func: G) -> impl FnMut(I) -> IResult<I, O, E>
@@ -391,7 +393,7 @@ fn json_value(i: Span) -> Result<SpannedValue> {
 pub fn end_chars(i: Span) -> std::result::Result<(Span, ()), Error> {
     let (rest, _) = unwrap_nom_error(many0(multispace1)(i))?;
 
-    if rest.fragment() == &"" {
+    if rest.fragment() == "" {
         return Ok((rest, ()));
     }
 

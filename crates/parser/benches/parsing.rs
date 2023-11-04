@@ -3,9 +3,10 @@ use spanned_json_parser::parse;
 use std::fs;
 
 fn parse_benchmark(c: &mut Criterion) {
-    let paths: [&str; 2] = [
+    let paths = [
         "./benches/data/twitter.json",
         "./benches/data/citm_catalog.json",
+        "./benches/data/canada.json",
     ];
     let mut group = c.benchmark_group("Parser");
 
