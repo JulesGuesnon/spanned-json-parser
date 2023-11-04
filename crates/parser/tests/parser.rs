@@ -127,7 +127,7 @@ mod error {
             Ok(_) => panic!("Not supposed to happen"),
         }
 
-        let json = r#"{"hello": vrai 
+        let json = r#"{"hello": vrai
         }"#;
 
         let parsed = parse(json);

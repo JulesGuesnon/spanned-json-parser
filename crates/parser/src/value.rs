@@ -106,11 +106,11 @@ impl Display for SpannedValue {
 }
 
 impl Position {
-    pub fn from_end<T: nom::AsBytes>(val: LocatedSpan<T>) -> Self {
+    pub fn from_ahead<T: nom::AsBytes>(val: LocatedSpan<T>) -> Self {
         Self {
             line: val.location_line() as usize,
-            // We get end position after the structure is parsed
-            // So the last char has already been eaten
+            // Often times, we retrieve the position after the start or end char
+            // has already been eaten, so we need to go back by 1
             col: val.naive_get_utf8_column() - 1,
         }
     }

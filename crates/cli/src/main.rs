@@ -16,7 +16,8 @@ fn main() {
     let start = Instant::now();
     println!("Starting parsing: {:?}", start);
 
-    let parsed = spanned_json_parser::parse(&json);
+    let parsed = serde_json::from_str::<serde_json::Value>(&json);
+    // let parsed = spanned_json_parser::parse(&json);
 
     println!("Ended parsing: {:?}", start.elapsed());
     match parsed {

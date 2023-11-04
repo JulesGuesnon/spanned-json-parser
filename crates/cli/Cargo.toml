@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 spanned_json_parser = { path = "../parser" }
+serde = "1.0.190"
+serde_json = "1.0"

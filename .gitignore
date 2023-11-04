@@ -1,1 +1,3 @@
 target
+flamegraph.svg
+crates/parser/benches/data/largest.json

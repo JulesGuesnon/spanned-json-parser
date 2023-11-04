@@ -1,19 +1,26 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use spanned_json_parser::parse;
 use std::fs;
 
 fn parse_benchmark(c: &mut Criterion) {
-    let json = fs::read_to_string("./benches/data/twitter.json").unwrap();
+    let paths: [&str; 2] = [
+        "./benches/data/twitter.json",
+        "./benches/data/citm_catalog.json",
+    ];
+    let mut group = c.benchmark_group("Parser");
 
-    c.bench_function("parse twitter.json", |b| b.iter(|| parse(black_box(&json))));
+    group.sample_size(10);
 
-    drop(json);
+    for path in paths {
+        let json = fs::read_to_string(path).unwrap();
 
-    let json = fs::read_to_string("./benches/data/citm_catalog.json").unwrap();
-
-    c.bench_function("parse citm_catalog.json", |b| {
-        b.iter(|| parse(black_box(&json)))
-    });
+        group.throughput(Throughput::Bytes(json.len() as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(path), &json, |b, data| {
+            b.iter(|| {
+                let _ = parse(black_box(data)).unwrap();
+            })
+        });
+    }
 }
 
 criterion_group!(benches, parse_benchmark);
