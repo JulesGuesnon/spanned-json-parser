@@ -16,7 +16,6 @@ use nom::{
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     Err, IResult, Parser,
 };
-use nom_locate::{position, LocatedSpan};
 use std::collections::HashMap;
 use std::num::ParseIntError;
 use std::time::Instant;
@@ -358,7 +357,6 @@ fn hash(i: Span<'_>) -> Result<HashMap<String, SpannedValue>> {
 fn json_value(i: Span) -> Result<SpannedValue> {
     let (i, _) = many0(multispace1)(i)?;
 
-    println!("Input before: {:?}", i);
     let start = Position::from(i);
 
     let (i, first_char) = anychar(i)?;
@@ -386,7 +384,6 @@ fn json_value(i: Span) -> Result<SpannedValue> {
         }
     }?;
 
-    println!("Input after: {:?}", i);
     let end = Position::from_ahead(i);
 
     Ok((i, SpannedValue { start, end, value }))

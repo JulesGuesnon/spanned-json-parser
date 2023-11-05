@@ -1,8 +1,5 @@
-use std::{collections::HashMap, fmt::Display};
-
-use nom_locate::LocatedSpan;
-
 use crate::input::Input;
+use std::{collections::HashMap, fmt::Display};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Number {
@@ -108,29 +105,12 @@ impl Display for SpannedValue {
 }
 
 impl Position {
-    // pub fn from_ahead<T: nom::AsBytes>(val: LocatedSpan<T>) -> Self {
-    //     Self {
-    //         line: val.location_line() as usize,
-    //         // Often times, we retrieve the position after the start or end char
-    //         // has already been eaten, so we need to go back by 1
-    //         col: val.get_utf8_column() - 1,
-    //     }
-    // }
-    pub fn from_ahead<'a>(val: Input<'a>) -> Self {
+    pub fn from_ahead(val: Input<'_>) -> Self {
         Self {
-            line: val.location_line() as usize,
+            line: val.location_line(),
             // Often times, we retrieve the position after the start or end char
             // has already been eaten, so we need to go back by 1
             col: val.get_utf8_column() - 1,
-        }
-    }
-}
-
-impl<T: nom::AsBytes> From<LocatedSpan<T>> for Position {
-    fn from(val: LocatedSpan<T>) -> Self {
-        Self {
-            line: val.location_line() as usize,
-            col: val.get_utf8_column(),
         }
     }
 }
@@ -139,8 +119,6 @@ impl<'a> From<Input<'a>> for Position {
     fn from(val: Input<'a>) -> Self {
         Self {
             line: val.location_line(),
-            // Often times, we retrieve the position after the start or end char
-            // has already been eaten, so we need to go back by 1
             col: val.get_utf8_column(),
         }
     }

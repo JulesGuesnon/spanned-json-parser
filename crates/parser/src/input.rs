@@ -21,7 +21,7 @@ impl<'a> Input<'a> {
         Self {
             data,
             line: 1,
-            col: 0,
+            col: 1,
         }
     }
     pub fn location_line(&self) -> usize {
@@ -245,18 +245,15 @@ impl<'a> Slice<RangeTo<usize>> for Input<'a> {
         }
         let last_index = last_index.map(|v| v + 1).unwrap_or(0);
 
-        let chars_to_count = old_data.slice(last_index..);
-
-        // The next string is 1 ahead of the chars we're counting
         let col = num_chars(old_data.as_bytes().slice(last_index..));
 
-        println!("Old data: {:?} - Count: {:?}", old_data, col);
         Self {
             data: next_data,
             line: self.line + lines_to_add,
             col: if lines_to_add == 0 {
                 self.col + col
             } else {
+                // When going to a new line, char starts at 1
                 col + 1
             },
         }
@@ -282,35 +279,24 @@ impl<'a> Slice<RangeFrom<usize>> for Input<'a> {
 
         let mut lines_to_add = 0;
         let mut last_index = None;
+
         for i in new_line_iter {
             lines_to_add += 1;
             last_index = Some(i);
         }
         let last_index = last_index.map(|v| v + 1).unwrap_or(0);
 
-        // The next string is 1 ahead of the chars we're counting
         let col = num_chars(old_data.as_bytes().slice(last_index..));
 
-        println!("Old data: {:?} - Count: {:?}", old_data, col);
         Self {
             data: next_data,
             line: self.line + lines_to_add,
             col: if lines_to_add == 0 {
                 self.col + col
             } else {
+                // When going to a new line, char starts at 1
                 col + 1
             },
-        }
-    }
-}
-impl<'a> Slice<RangeFull> for Input<'a> {
-    fn slice(&self, range: RangeFull) -> Self {
-        let next_data = self.data.slice(range);
-        println!("RangeFull: Next data: {:?}", next_data);
-        Self {
-            data: next_data,
-            line: 0,
-            col: 1,
         }
     }
 }
