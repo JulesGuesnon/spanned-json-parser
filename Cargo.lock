@@ -488,7 +488,9 @@ dependencies = [
 name = "spanned_json_parser"
 version = "0.1.0"
 dependencies = [
+ "bytecount",
  "criterion",
+ "memchr",
  "nom",
  "nom_locate",
  "serde",

@@ -138,10 +138,10 @@ impl<T: nom::AsBytes> From<LocatedSpan<T>> for Position {
 impl<'a> From<Input<'a>> for Position {
     fn from(val: Input<'a>) -> Self {
         Self {
-            line: val.location_line() as usize,
+            line: val.location_line(),
             // Often times, we retrieve the position after the start or end char
             // has already been eaten, so we need to go back by 1
-            col: val.get_utf8_column() - 1,
+            col: val.get_utf8_column(),
         }
     }
 }

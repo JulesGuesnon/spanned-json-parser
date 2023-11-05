@@ -1,28 +1,35 @@
+use bytecount::num_chars;
+use memchr::Memchr;
+use nom::{
+    AsBytes, Compare, Err, ExtendInto, FindSubstring, FindToken, InputIter, InputLength, InputTake,
+    InputTakeAtPosition, Offset, ParseTo, Slice,
+};
 use std::{
     ops::{Range, RangeFrom, RangeFull, RangeTo},
     str::{CharIndices, Chars, FromStr},
 };
 
-use nom::{
-    AsBytes, Compare, Err, ExtendInto, FindSubstring, FindToken, InputIter, InputLength, InputTake,
-    InputTakeAtPosition, Offset, ParseTo, Slice,
-};
-
 #[derive(Clone, Debug, Copy)]
 pub struct Input<'a> {
     pub data: &'a str,
+    line: usize,
+    col: usize,
 }
 
 impl<'a> Input<'a> {
     pub fn new(data: &'a str) -> Self {
-        Self { data }
+        Self {
+            data,
+            line: 1,
+            col: 0,
+        }
     }
     pub fn location_line(&self) -> usize {
-        0
+        self.line
     }
 
     pub fn get_utf8_column(&self) -> usize {
-        10
+        self.col
     }
 
     pub fn fragment(&self) -> &'a str {
@@ -175,11 +182,11 @@ impl<'a> InputTakeAtPosition for Input<'a> {
         P: Fn(Self::Item) -> bool,
     {
         match self.data.position(predicate) {
-            Some(0) => Err(Err::Error(E::from_error_kind(self.clone(), e))),
+            Some(0) => Err(Err::Error(E::from_error_kind(*self, e))),
             Some(n) => Ok(self.take_split(n)),
             None => {
                 if self.data.input_len() == 0 {
-                    Err(Err::Error(E::from_error_kind(self.clone(), e)))
+                    Err(Err::Error(E::from_error_kind(*self, e)))
                 } else {
                     Ok(self.take_split(self.input_len()))
                 }
@@ -202,30 +209,108 @@ impl<'a, R: FromStr> ParseTo<R> for Input<'a> {
 
 impl<'a> Slice<Range<usize>> for Input<'a> {
     fn slice(&self, range: Range<usize>) -> Self {
+        let next_data = self.data.slice(range);
+        println!("Range: Next data: {:?}", next_data);
         Self {
-            data: self.data.slice(range),
+            data: next_data,
+            line: 0,
+            col: 1,
         }
     }
 }
 
 impl<'a> Slice<RangeTo<usize>> for Input<'a> {
     fn slice(&self, range: RangeTo<usize>) -> Self {
+        let next_data = self.data.slice(range);
+
+        let offset = self.data.offset(next_data);
+
+        let old_data = self.data.slice(..offset);
+
+        if offset == 0 {
+            return Self {
+                data: next_data,
+                line: self.line,
+                col: self.col,
+            };
+        }
+
+        let new_line_iter = Memchr::new(b'\n', old_data.as_bytes());
+
+        let mut lines_to_add = 0;
+        let mut last_index = None;
+        for i in new_line_iter {
+            lines_to_add += 1;
+            last_index = Some(i);
+        }
+        let last_index = last_index.map(|v| v + 1).unwrap_or(0);
+
+        let chars_to_count = old_data.slice(last_index..);
+
+        // The next string is 1 ahead of the chars we're counting
+        let col = num_chars(old_data.as_bytes().slice(last_index..));
+
+        println!("Old data: {:?} - Count: {:?}", old_data, col);
         Self {
-            data: self.data.slice(range),
+            data: next_data,
+            line: self.line + lines_to_add,
+            col: if lines_to_add == 0 {
+                self.col + col
+            } else {
+                col + 1
+            },
         }
     }
 }
 impl<'a> Slice<RangeFrom<usize>> for Input<'a> {
     fn slice(&self, range: RangeFrom<usize>) -> Self {
+        let next_data = self.data.slice(range);
+
+        let offset = self.data.offset(next_data);
+
+        let old_data = self.data.slice(..offset);
+
+        if offset == 0 {
+            return Self {
+                data: next_data,
+                line: self.line,
+                col: self.col,
+            };
+        }
+
+        let new_line_iter = Memchr::new(b'\n', old_data.as_bytes());
+
+        let mut lines_to_add = 0;
+        let mut last_index = None;
+        for i in new_line_iter {
+            lines_to_add += 1;
+            last_index = Some(i);
+        }
+        let last_index = last_index.map(|v| v + 1).unwrap_or(0);
+
+        // The next string is 1 ahead of the chars we're counting
+        let col = num_chars(old_data.as_bytes().slice(last_index..));
+
+        println!("Old data: {:?} - Count: {:?}", old_data, col);
         Self {
-            data: self.data.slice(range),
+            data: next_data,
+            line: self.line + lines_to_add,
+            col: if lines_to_add == 0 {
+                self.col + col
+            } else {
+                col + 1
+            },
         }
     }
 }
 impl<'a> Slice<RangeFull> for Input<'a> {
     fn slice(&self, range: RangeFull) -> Self {
+        let next_data = self.data.slice(range);
+        println!("RangeFull: Next data: {:?}", next_data);
         Self {
-            data: self.data.slice(range),
+            data: next_data,
+            line: 0,
+            col: 1,
         }
     }
 }
