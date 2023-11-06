@@ -2,7 +2,13 @@
 name = "spanned_json_parser"
 version = "0.1.0"
 edition = "2021"
-
+readme = "./README.md"
+description = "A Json parser that gives you the line and column number for each value"
+authors = ["Jules Guesnon <guesnonj@outlook.fr>"]
+categories = ["encoding", "parser-implementations", "parsing"]
+keywords = ["json", "span", "line", "column", "parser"]
+license = "MIT"
+repository = "https://github.com/JulesGuesnon/spanned-json-parser"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
