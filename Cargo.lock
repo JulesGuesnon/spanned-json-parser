@@ -482,16 +482,6 @@ dependencies = [
  "memchr",
  "nom",
  "serde",
- "serde_json",
-]
-
-[[package]]
-name = "spanned_json_parser_cli"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "spanned_json_parser",
 ]
 
 [[package]]
