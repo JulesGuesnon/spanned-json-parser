@@ -1,5 +1,5 @@
 [package]
-name = "spanned-json-parser"
+name = "spanned_json_parser"
 version = "0.1.0"
 edition = "2021"
 readme = "./README.md"
