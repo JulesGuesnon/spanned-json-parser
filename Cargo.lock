@@ -474,7 +474,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spanned-json-parser"
+name = "spanned_json_parser"
 version = "0.1.0"
 dependencies = [
  "bytecount",

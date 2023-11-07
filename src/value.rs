@@ -18,7 +18,7 @@ impl Display for Number {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     Null,
     Number(Number),
@@ -91,7 +91,7 @@ pub struct Position {
     pub line: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct SpannedValue {
     pub value: Value,
     pub start: Position,
