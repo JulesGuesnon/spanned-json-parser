@@ -1,6 +1,6 @@
 [package]
 name = "spanned_json_parser"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 readme = "./README.md"
 description = "A Json parser that gives you the line and column number for each value"
