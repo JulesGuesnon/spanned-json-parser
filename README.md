@@ -77,3 +77,7 @@ Parser ./benches/data/canada.json
 time:   [42.026 ms 42.188 ms 42.341 ms]
 thrpt:  [50.702 MiB/s 50.886 MiB/s 51.082 MiB/s]
 ```
+
+# Todo
+
+- [ ] Handle trailing comma
