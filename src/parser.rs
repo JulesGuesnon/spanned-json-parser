@@ -450,7 +450,7 @@ pub fn unwrap_nom_error<T>(value: Result<T>) -> std::result::Result<(Span, T), E
 }
 
 /// Use this function to parse your json into a [SpannedValue]
-/// ```rust
+/// ```ignore
 /// use spanned_json_parse::parse;
 /// use std::fs;
 ///

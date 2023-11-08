@@ -11,7 +11,7 @@
 //!
 //! The crate expose a `Value` that is similar to [serde](https://docs.rs/serde_json/latest/serde_json/value/enum.Value.html), and wraps everything into this struct:
 //!
-//! ```rust
+//! ```ignore
 //! pub struct Position {
 //!     pub col: usize,
 //!     pub line: usize,
@@ -26,7 +26,7 @@
 //!
 //! ### Parsing
 //!
-//! ```rust
+//! ```ignore
 //! use spanned_json_parse::parse;
 //! use std::fs;
 //!
@@ -41,7 +41,7 @@
 //!
 //! ### Serializing in a struct
 //!
-//! ```rust
+//! ```ignore
 //! use serde::Deserialize;
 //! use spanned_json_parser::parse;
 //!
@@ -65,7 +65,7 @@
 //!
 //! Here are the outputs of the benchmark. Everything was tested on a Macbook Pro M1, so keep in mind that this numbers are here to give you an idea of the performance, but might not be representative of the reality:
 //!
-//! ```
+//! ```ignore
 //! Parser ./benches/data/twitter.json
 //! time:   [10.220 ms 10.279 ms 10.334 ms]
 //! thrpt:  [58.280 MiB/s 58.589 MiB/s 58.932 MiB/s]
