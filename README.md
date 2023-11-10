@@ -1,4 +1,9 @@
-# Spanned Json Parser
+# Spanned Json Parser &emsp; [![Build Status]][actions] [![Latest Version]][crates.io]
+
+[Build Status]: https://img.shields.io/github/actions/workflow/status/julesguesnon/spanned-json-parser/rust.yml?branch=main
+[actions]: https://github.com/julesguesnon/spanned-json-parser/actions?query=branch%3Amain
+[crates.io]: https://crates.io/crates/spanned_json_parser
+[Latest Version]: https://img.shields.io/crates/v/spanned_json_parser.svg
 
 This crate is a json parser that will return span information for values, which mean lines and column number. It is also compatible with [serde](https://serde.rs/) so you can serialize it to any other struct that implements [Deserialize](https://docs.rs/serde/latest/serde/de/trait.Deserialize.html)
 
