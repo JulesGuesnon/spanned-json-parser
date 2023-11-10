@@ -9,11 +9,11 @@ This crate is a json parser that will return span information for values, which 
 
 ## Why use it ?
 
-One of the main use case is to do validation after parsing. By having the line and col number, you can tell really precisely to user where a value is invalid
+One of the main use case is to do validation after parsing. By having the line and col number, you can tell really precisely to a user where a value is invalid
 
 ## How to use it ?
 
-The crate expose a `Value` that is similar to [serde](https://docs.rs/serde_json/latest/serde_json/value/enum.Value.html), and wraps everything into this struct:
+The crate expose a [`Value`](https://docs.rs/spanned_json_parser/0.2.0/spanned_json_parser/value/enum.Value.html) that is similar to [serde](https://docs.rs/serde_json/latest/serde_json/value/enum.Value.html), and wraps everything into this struct:
 
 ```rust
 pub struct Position {
