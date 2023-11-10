@@ -3,7 +3,7 @@ use crate::input::Input;
 use crate::value::{Number, Position, SpannedValue, Value};
 use nom::bytes::complete::take_till;
 use nom::character::complete::digit0;
-use nom::combinator::eof;
+use nom::combinator::{eof, opt};
 use nom::error::ParseError;
 use nom::multi::many_till;
 use nom::{
@@ -39,7 +39,6 @@ where
     I: Clone,
 {
     move |i: I| {
-        let i = i.clone();
         let result = parser.parse(i.clone());
 
         match result {
@@ -47,6 +46,17 @@ where
             v => v,
         }
     }
+}
+
+pub fn map_parser<I, O1, O2, E: ParseError<I>, F, G>(
+    mut parser: F,
+    mut applied_parser: G,
+) -> impl FnMut(I) -> IResult<I, O2, E>
+where
+    F: Parser<I, O1, E>,
+    G: FnMut((I, O1)) -> IResult<I, O2, E>,
+{
+    move |input: I| applied_parser(parser.parse(input)?)
 }
 
 fn parse_true(i: Span) -> Result<bool> {
@@ -278,7 +288,16 @@ fn array(i: Span) -> Result<Vec<SpannedValue>> {
                         }
                     }),
                 ),
-                json_value,
+                or_else(json_value, |e: Err<Error>, i| {
+                    // If it succeeds, it means that it's a trailing comma
+                    let _ = preceded(multispace0, char(']'))(i).map_err(|_: Err<Error>| e)?;
+
+                    Err(Err::Failure(Error::new(
+                        Position::from_ahead(i),
+                        Position::from_ahead(i),
+                        Kind::TrailingComma,
+                    )))
+                }),
             ),
             preceded(
                 multispace0,
@@ -298,11 +317,13 @@ fn array(i: Span) -> Result<Vec<SpannedValue>> {
 }
 
 fn key_value(i: Span<'_>) -> Result<(String, SpannedValue)> {
+    let (i, comma) = opt(char(','))(i)?;
+
     let pos_before_space = Position::from(i);
 
     let (i, _) = multispace0(i)?;
 
-    if i.starts_with('}') || i.is_empty() {
+    if (i.starts_with('}') || i.is_empty()) && comma.is_none() {
         // Key value is called in a loop, and only an error can stop it
         return Err(Err::Error(Error::default()));
     }
@@ -310,11 +331,13 @@ fn key_value(i: Span<'_>) -> Result<(String, SpannedValue)> {
     let (i, key) = preceded(char('"'), string)(i).or_else(|e| match e {
         Err::Error(mut e) => {
             let (i, key) = take_until_delimiter(i, true)?;
+
+            let end = Position::from_ahead(i);
+
             if key.is_empty() {
-                e.start = pos_before_space;
+                e.start = pos_before_space.clone();
             }
             e.kind = Kind::InvalidKey(key);
-            let end = Position::from_ahead(i);
             e.end = end;
 
             Err(Err::Failure(e))
@@ -341,25 +364,41 @@ fn key_value(i: Span<'_>) -> Result<(String, SpannedValue)> {
 fn hash(i: Span<'_>) -> Result<HashMap<String, SpannedValue>> {
     let start = Position::from_ahead(i);
 
-    let result = terminated(
+    let result: Result<HashMap<String, SpannedValue>> = terminated(
         map(
             separated_list0(
                 preceded(
                     multispace0,
-                    or_else(char(','), |e: Err<Error>, i| {
-                        let (i, _) = multispace0(i)?;
+                    or_else(
+                        map_parser(char(','), |(i, _): (Span, char)| {
+                            let (j, _) = multispace0(i)?;
 
-                        match e {
-                            Err::Error(mut e) if !i.is_empty() && !i.starts_with('}') => {
-                                e.kind = Kind::MissingComma;
-                                e.start = start.clone();
-                                e.end.col -= 1;
-
-                                Err(Err::Failure(e))
+                            if j.starts_with('}') {
+                                let position = Position::from_ahead(i);
+                                Err(Err::Failure(Error::new(
+                                    position.clone(),
+                                    position,
+                                    Kind::TrailingComma,
+                                )))
+                            } else {
+                                Ok((i, ','))
                             }
-                            e => Err(e),
-                        }
-                    }),
+                        }),
+                        |e: Err<Error>, i| {
+                            let (i, _) = multispace0(i)?;
+
+                            match e {
+                                Err::Error(mut e) if !i.is_empty() && !i.starts_with('}') => {
+                                    e.kind = Kind::MissingComma;
+                                    e.start = start.clone();
+                                    e.end.col -= 1;
+
+                                    Err(Err::Failure(e))
+                                }
+                                e => Err(e),
+                            }
+                        },
+                    ),
                 ),
                 key_value,
             ),

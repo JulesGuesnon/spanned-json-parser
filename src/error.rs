@@ -21,6 +21,7 @@ pub enum Kind {
     NotAnArray,
     NotANumber,
     InvalidValue(String),
+    TrailingComma,
     NomError(nom::error::ErrorKind),
     // Used when an error will be remaped
     ToBeDefined,

@@ -210,7 +210,7 @@ impl<'a, R: FromStr> ParseTo<R> for Input<'a> {
 impl<'a> Slice<Range<usize>> for Input<'a> {
     fn slice(&self, range: Range<usize>) -> Self {
         let next_data = self.data.slice(range);
-        println!("Range: Next data: {:?}", next_data);
+
         Self {
             data: next_data,
             line: 0,
@@ -219,10 +219,8 @@ impl<'a> Slice<Range<usize>> for Input<'a> {
     }
 }
 
-impl<'a> Slice<RangeTo<usize>> for Input<'a> {
-    fn slice(&self, range: RangeTo<usize>) -> Self {
-        let next_data = self.data.slice(range);
-
+impl<'a> Input<'a> {
+    fn slice_common(&self, next_data: &'a str) -> Self {
         let offset = self.data.offset(next_data);
 
         let old_data = self.data.slice(..offset);
@@ -259,44 +257,18 @@ impl<'a> Slice<RangeTo<usize>> for Input<'a> {
         }
     }
 }
+
+impl<'a> Slice<RangeTo<usize>> for Input<'a> {
+    fn slice(&self, range: RangeTo<usize>) -> Self {
+        let next_data = self.data.slice(range);
+
+        self.slice_common(next_data)
+    }
+}
 impl<'a> Slice<RangeFrom<usize>> for Input<'a> {
     fn slice(&self, range: RangeFrom<usize>) -> Self {
         let next_data = self.data.slice(range);
 
-        let offset = self.data.offset(next_data);
-
-        let old_data = self.data.slice(..offset);
-
-        if offset == 0 {
-            return Self {
-                data: next_data,
-                line: self.line,
-                col: self.col,
-            };
-        }
-
-        let new_line_iter = Memchr::new(b'\n', old_data.as_bytes());
-
-        let mut lines_to_add = 0;
-        let mut last_index = None;
-
-        for i in new_line_iter {
-            lines_to_add += 1;
-            last_index = Some(i);
-        }
-        let last_index = last_index.map(|v| v + 1).unwrap_or(0);
-
-        let col = num_chars(old_data.as_bytes().slice(last_index..));
-
-        Self {
-            data: next_data,
-            line: self.line + lines_to_add,
-            col: if lines_to_add == 0 {
-                self.col + col
-            } else {
-                // When going to a new line, char starts at 1
-                col + 1
-            },
-        }
+        self.slice_common(next_data)
     }
 }

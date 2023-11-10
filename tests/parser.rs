@@ -312,6 +312,26 @@ mod error {
             Ok(_) => panic!("Not supposed to happen"),
         }
     }
+
+    #[test]
+    fn trailing_comma() {
+        let json = r#"{"hello": "world", }"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 18);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 18);
+                assert_eq!(e.kind, Kind::TrailingComma)
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+    }
 }
 
 mod string {
@@ -493,6 +513,26 @@ mod array {
                 assert_eq!(e.end.line, 1);
                 assert_eq!(e.end.col, 3);
                 assert_eq!(e.kind, Kind::MissingComma)
+            }
+            Ok(_) => panic!("Not supposed to happen"),
+        }
+    }
+
+    #[test]
+    fn trailing_comma() {
+        let json = r#"["hello", "world", ]"#;
+
+        let parsed = parse(json);
+
+        assert!(parsed.is_err());
+
+        match parsed {
+            Err(e) => {
+                assert_eq!(e.start.line, 1);
+                assert_eq!(e.start.col, 18);
+                assert_eq!(e.end.line, 1);
+                assert_eq!(e.end.col, 18);
+                assert_eq!(e.kind, Kind::TrailingComma)
             }
             Ok(_) => panic!("Not supposed to happen"),
         }
