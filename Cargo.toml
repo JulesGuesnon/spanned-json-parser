@@ -16,6 +16,7 @@ nom = "7"
 memchr = "2.6.4"
 serde = "1.0.190"
 bytecount = "0.6.7"
+wasm-bindgen = { version = "0.2", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -24,3 +25,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "parsing"
 path = "benches/paring.rs"
 harness = false
+
+[features]
+wasm = ["wasm-bindgen"]

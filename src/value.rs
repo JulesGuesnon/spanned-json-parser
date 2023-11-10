@@ -1,5 +1,7 @@
 use crate::input::Input;
 use std::{collections::HashMap, fmt::Display};
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::*;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Number {
@@ -85,6 +87,7 @@ impl Value {
     }
 }
 
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct Position {
     pub col: usize,
